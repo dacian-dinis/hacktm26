@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ReportView } from "@/components/report/ReportView";
+import ReportView from "@/components/report/ReportView";
 import { decodeReportToken, type TokenPayload } from "@/lib/token";
 
 export default function ReportPage() {
@@ -31,7 +31,7 @@ export default function ReportPage() {
     <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold">Veritas Stack</h1>
-        <p className="text-sm text-mutedForeground">
+        <p className="text-sm text-muted-foreground">
           Verification report — delivered from the browser extension.
         </p>
       </header>

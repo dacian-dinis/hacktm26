@@ -3,9 +3,204 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+
+  /* ── Background ─────────────────────────── */
+  --bg-primary: 225 15% 6%;
+  --bg-card: 225 15% 10%;
+  --bg-glass: 225 15% 14%;
+  --bg-elevated: 225 15% 12%;
+
+  /* ── Foreground ─────────────────────────── */
+  --text-primary: 0 0% 95%;
+  --text-muted: 225 10% 55%;
+  --text-dim: 225 10% 35%;
+
+  /* ── Accent ─────────────────────────────── */
+  --accent: 160 84% 50%;
+  --accent-muted: 160 60% 30%;
+  --danger: 0 84% 60%;
+  --warning: 38 92% 50%;
+  --info: 221 83% 53%;
+
+  /* ── Border ─────────────────────────────── */
+  --border: 225 15% 18%;
+  --border-glass: 225 15% 22%;
+
+  /* ── Radii ──────────────────────────────── */
+  --radius: 0.75rem;
+}
+
+/* ── Base ──────────────────────────────────── */
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  @apply bg-background text-foreground;
+  background-color: hsl(var(--bg-primary));
+  color: hsl(var(--text-primary));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ─────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--bg-primary));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-glass));
+  border-radius: 100px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--text-dim));
+}
+
+/* ── Selection ─────────────────────────────── */
+::selection {
+  background: hsla(var(--accent), 0.25);
+  color: hsl(var(--text-primary));
+}
+
+/* ── Animations ────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) translateX(0px); }
+  33% { transform: translateY(-15px) translateX(10px); }
+  66% { transform: translateY(10px) translateX(-5px); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes grid-fade {
+  0%, 100% { opacity: 0.03; }
+  50% { opacity: 0.06; }
+}
+
+@keyframes counter-up {
+  from { --counter: 0; }
+  to { --counter: 100; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+/* ── Utility Classes ───────────────────────── */
+@layer utilities {
+  .glass {
+    background: hsla(var(--bg-glass), 0.6);
+    backdrop-filter: blur(16px) saturate(1.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+    border: 1px solid hsla(var(--border-glass), 0.3);
+  }
+
+  .glass-strong {
+    background: hsla(var(--bg-glass), 0.85);
+    backdrop-filter: blur(24px) saturate(1.8);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    border: 1px solid hsla(var(--border-glass), 0.4);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 20px -5px hsla(var(--accent), 0.3),
+                0 0 60px -15px hsla(var(--accent), 0.15);
+  }
+
+  .glow-accent-sm {
+    box-shadow: 0 0 12px -3px hsla(var(--accent), 0.25);
+  }
+
+  .glow-danger {
+    box-shadow: 0 0 20px -5px hsla(var(--danger), 0.3);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--info)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-subtle {
+    background: linear-gradient(135deg, hsl(var(--text-primary)), hsl(var(--text-muted)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--bg-card)) 0%,
+      hsl(var(--bg-elevated)) 50%,
+      hsl(var(--bg-card)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-float-slow {
+    animation: float-slow 10s ease-in-out infinite;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+
+  .dot-grid {
+    background-image: radial-gradient(
+      circle,
+      hsla(var(--text-muted), 0.15) 1px,
+      transparent 1px
+    );
+    background-size: 24px 24px;
+  }
+
+  .border-gradient {
+    border-image: linear-gradient(
+      135deg,
+      hsla(var(--accent), 0.4),
+      hsla(var(--border-glass), 0.2)
+    ) 1;
+  }
+}
+
+/* ── Focus ring ────────────────────────────── */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid hsl(var(--accent));
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
 }

@@ -1,175 +1,147 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { DemoExamples } from "@/components/DemoExamples";
-import { WhyPanel } from "@/components/WhyPanel";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ReportView } from "@/components/report/ReportView";
-import { ReportSkeleton } from "@/components/report/ReportSkeleton";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Report } from "@/types/report";
+import { verifyImage, runDemo } from "@/lib/api";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
-
-interface Preview {
-  url: string;
-  name?: string;
-}
+import Navbar from "@/components/Navbar";
+import AnimatedBackground from "@/components/AnimatedBackground";
+import LoadingScreen from "@/components/LoadingScreen";
+import UploadZone from "@/components/UploadZone";
+import DemoExamples from "@/components/DemoExamples";
+import WhyPanel from "@/components/WhyPanel";
+import ReportView from "@/components/report/ReportView";
 
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [demoSlug, setDemoSlug] = useState<string | null>(null);
-  const [url, setUrl] = useState("");
-  const [query, setQuery] = useState("");
   const [report, setReport] = useState<Report | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Revoke object URLs when the preview changes or the page unmounts.
-  useEffect(() => {
-    if (!preview?.url || !preview.url.startsWith("blob:")) return;
-    const u = preview.url;
-    return () => URL.revokeObjectURL(u);
-  }, [preview?.url]);
-
-  function setFileWithPreview(next: File | null) {
-    setFile(next);
-    setPreview(
-      next
-        ? { url: URL.createObjectURL(next), name: next.name }
-        : null,
-    );
-  }
-
-  async function verify(target: File) {
-    setLoading(true);
+  const handleVerify = async (file?: File, url?: string, query?: string) => {
+    setIsLoading(true);
     setError(null);
     setReport(null);
     try {
-      const form = new FormData();
-      form.append("file", target);
-      if (url) form.append("url", url);
-      if (query) form.append("query", query);
-      const res = await fetch(`${API_BASE}/verify`, {
-        method: "POST",
-        body: form,
-      });
-      if (!res.ok) throw new Error(`API ${res.status}`);
-      setReport((await res.json()) as Report);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+      // Simulate slight network delay for dramatic effect if it's too fast
+      const [res] = await Promise.all([
+        verifyImage(file, url, query),
+        new Promise((resolve) => setTimeout(resolve, 800)),
+      ]);
+      setReport(res);
+    } catch (err: any) {
+      setError(err.message || "Verification failed");
+      setIsLoading(false);
     }
-  }
+  };
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!file) return;
-    setDemoSlug(null);
-    await verify(file);
-  }
+  const handleDemoSelect = async (slug: string) => {
+    setIsLoading(true);
+    setError(null);
+    setReport(null);
+    try {
+      const [res] = await Promise.all([
+        runDemo(slug),
+        new Promise((resolve) => setTimeout(resolve, 800)),
+      ]);
+      setReport(res);
+    } catch (err: any) {
+      setError(err.message || "Demo verification failed");
+      setIsLoading(false);
+    }
+  };
 
-  async function onPickDemo(slug: string, demoFile: File) {
-    setFileWithPreview(demoFile);
-    setDemoSlug(slug);
-    await verify(demoFile);
-  }
+  const handleLoadingComplete = () => {
+    setIsLoading(false);
+    // Smooth scroll to report
+    setTimeout(() => {
+      document.getElementById("report-section")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
+  };
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <header className="flex flex-col gap-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-accent">
-          Veritas Stack &middot; HackTM 2026 &middot; Defense Track
-        </p>
-        <h1 className="text-3xl font-bold leading-tight md:text-4xl">
-          Provenance over prediction.
-        </h1>
-        <p className="max-w-2xl text-sm text-mutedForeground md:text-base">
-          A verification workbench for synthetic and sourced media. Every
-          check emits a structured, signed finding &mdash; the output is an
-          audit trail, not a confidence score.
-        </p>
-      </header>
+    <>
+      <Navbar />
+      <AnimatedBackground />
+      {isLoading && <LoadingScreen onComplete={handleLoadingComplete} />}
 
-      <WhyPanel />
-
-      <div className="flex flex-col gap-4 rounded-lg border border-border bg-white p-4 shadow-sm">
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <label className="text-sm font-medium" htmlFor="upload-input">
-            Upload an image
-          </label>
-          <input
-            id="upload-input"
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              setFileWithPreview(e.target.files?.[0] ?? null);
-              setDemoSlug(null);
-            }}
-            className="text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-          />
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="url">Source URL (optional)</Label>
-              <Input
-                id="url"
-                placeholder="https://t.me/..."
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="query">Claim query (optional)</Label>
-              <Input
-                id="query"
-                placeholder="What is being claimed?"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
+      <main className="relative z-10 mx-auto min-h-screen max-w-5xl px-6 pt-32 pb-24">
+        {/* Hero Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto max-w-3xl text-center"
+        >
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5 text-xs font-medium tracking-wide text-muted-foreground">
+            <span className="flex h-2 w-2 rounded-full bg-accent animate-pulse-glow" />
+            HackTM 2026 · Defense Track
           </div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
+            Verify media with{" "}
+            <span className="text-gradient">provenance</span>
+          </h1>
+          <p className="mt-6 text-lg leading-relaxed text-muted-foreground md:text-xl">
+            A verification workbench for synthetic and sourced media. Every check emits a structured, signed finding — the output is an audit trail, not a confidence score.
+          </p>
+        </motion.div>
 
-          <Button type="submit" disabled={!file || loading}>
-            {loading ? "Verifying…" : "Verify"}
-          </Button>
-          {demoSlug && (
-            <p className="text-xs text-mutedForeground">
-              Loaded demo asset: <span className="font-mono">{demoSlug}</span>
-            </p>
-          )}
-          {error && (
-            <p
-              role="alert"
-              className="rounded-md border border-danger/40 bg-danger/10 p-2 text-sm text-danger"
+        {/* Upload Interface */}
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-16"
+          id="verify"
+        >
+          <div className="glass-strong rounded-2xl p-6 md:p-8 shadow-2xl">
+            <UploadZone onSubmit={handleVerify} isLoading={isLoading} />
+            
+            <div className="mt-8 border-t border-border/50 pt-6">
+              <DemoExamples onSelect={handleDemoSelect} isLoading={isLoading} />
+            </div>
+
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-6 overflow-hidden rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger"
+                >
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.div>
+
+        {/* Report Section */}
+        <AnimatePresence mode="wait">
+          {report && !isLoading && (
+            <motion.div
+              key={report.input_hash}
+              id="report-section"
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              className="mt-16 scroll-m-24"
             >
-              {error}
-            </p>
+              <h2 className="mb-6 text-2xl font-bold tracking-tight text-foreground">
+                Verification Report
+              </h2>
+              <ReportView report={report} />
+            </motion.div>
           )}
-        </form>
+        </AnimatePresence>
 
-        <hr className="border-border" />
-
-        <DemoExamples
-          apiBase={API_BASE}
-          onPick={onPickDemo}
-          disabled={loading}
-        />
-      </div>
-
-      {loading && <ReportSkeleton />}
-      {report && !loading && (
-        <ReportView report={report} preview={preview} />
-      )}
-
-      <footer className="mt-8 border-t border-border pt-4 text-xs text-mutedForeground">
-        Built for HackTM 2026 in collaboration with the NATO HUMINT Centre of
-        Excellence. Open source.
-      </footer>
-    </main>
+        {/* Methodology */}
+        <WhyPanel />
+      </main>
+    </>
   );
 }
