@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 
-def run_tier1(image_bytes: bytes, filename: str | None = None) -> list[Finding]:
+def run_tier1(image_bytes: bytes, filename: str | None = None, image_url: str | None = None) -> list[Finding]:
     """Run every Tier 1 check against an in-memory image.
 
     Each sub-check is wrapped so one failure cannot crash the whole tier —
@@ -53,7 +53,7 @@ def run_tier1(image_bytes: bytes, filename: str | None = None) -> list[Finding]:
             ("c2pa.signature.verify", lambda: verify_c2pa(path)),
             ("exif.metadata.parse", lambda: parse_exif(path)),
             ("phash.wire_match", lambda: match_wire_phash(path)),
-            ("reverse_image.lookup", lambda: reverse_image_search(image_bytes)),
+            ("reverse_image.lookup", lambda: reverse_image_search(image_bytes, image_url=image_url)),
         ):
             try:
                 findings.append(fn())

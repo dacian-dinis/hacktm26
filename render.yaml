@@ -21,7 +21,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.7
       # Set in dashboard, never in repo:
-      - key: BING_SEARCH_API_KEY
+      - key: SERPAPI_API_KEY
         sync: false
       - key: GOOGLE_FACTCHECK_API_KEY
         sync: false

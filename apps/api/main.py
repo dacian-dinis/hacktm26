@@ -138,7 +138,7 @@ async def verify(
     t4_query = query or filename
 
     findings: list[Finding] = [
-        *run_tier1(raw, filename),
+        *run_tier1(raw, filename, image_url=url),
         *[Finding.model_validate(finding) for finding in analyze_tier2(raw)],
         *get_tier4_findings(query=t4_query, url=url),
     ]
