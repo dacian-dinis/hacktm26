@@ -111,10 +111,14 @@ def reverse_image_search(
         error = "BING_SEARCH_API_KEY not set"
 
     if not hits:
-        cached = _load_cache().get(img_hash)
-        if cached:
-            hits = cached
+        cache = _load_cache()
+        if img_hash in cache:
+            # Authoritative: the cache has an entry for this hash, even if
+            # the hit list is empty (i.e. "we checked, nothing surfaced").
+            # Clear the live-search error so we don't leak it into evidence.
+            hits = cache[img_hash]
             source = "bing.reverse_image.cached"
+            error = None
 
     if error and not hits:
         return Finding(
