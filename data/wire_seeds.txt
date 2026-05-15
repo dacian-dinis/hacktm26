@@ -1,0 +1,29 @@
+# Wire-service seed photos for Tier 1 pHash matching.
+#
+# Each line is one image URL. Blank lines and `#` comments are ignored by the
+# post-rebase pre-hash script (`apps/api/scripts/build_wire_phashes.py`,
+# which will populate `data/wire_phashes.json`).
+#
+# Why Wikimedia Commons URLs instead of raw Reuters/AP/AFP/EPA URLs?
+#   - Wire-service hero photos sit behind paywalls or rotating CDN tokens,
+#     which means our pre-hash script and the demo could 404 at any time.
+#   - The photos below are the *same images* the wire services distributed
+#     during the 2024-25 news cycle (White House / NATO official photographer
+#     / Romanian Presidential Administration releases that wire pools
+#     redistribute), now hosted on Commons under licenses that allow
+#     download for hashing.
+#   - The `Special:FilePath/<name>` URL is the documented stable redirect
+#     to the current upload URL — the script just follows redirects.
+#
+# Curated to match the demo narrative (Romania election + NATO + Ukraine).
+# Expand toward ~200 entries during Phase 1 hour 4 (see PLAN.md §6).
+
+# --- Romania 2024-25 election cycle ---
+https://commons.wikimedia.org/wiki/Special:FilePath/Nicu%C8%99or_Dan_2024.jpg
+https://commons.wikimedia.org/wiki/Special:FilePath/Romanian_President_Nicu%C8%99or_Dan_(2025).jpg
+
+# --- NATO Washington summit, July 2024 ---
+https://commons.wikimedia.org/wiki/Special:FilePath/President_Joe_Biden_shakes_hands_with_Ukrainian_President_Volodymyr_Zelenskyy_at_the_NATO_Summit_in_Washington,_D.C._on_11_July_2024_(cropped).jpg
+https://commons.wikimedia.org/wiki/Special:FilePath/Canadian_Prime_Minister_Justin_Trudeau_arrives_for_NATO_Summit_-_2024_(8523357).jpg
+https://commons.wikimedia.org/wiki/Special:FilePath/British_Prime_Minister_Keir_Starmer_visits_Arlington_National_Cemetery,_Arlington,_Virginia_on_July_11,_2024_(cropped).jpg
+https://commons.wikimedia.org/wiki/Special:FilePath/Dick_Schoof_NATO_2024.jpg

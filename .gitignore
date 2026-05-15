@@ -1,0 +1,46 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.log
+npm-debug.log*
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Models & large data (cache locally, don't commit)
+models/
+.cache/
+data/raw/
+*.onnx
+*.pt
+*.safetensors
+
+# Build artifacts
+*.pdf.tmp
+report-output/
+
+# Intermediate source images for demo asset builder (rebuilt by scripts/build_demo_assets.py)
+tmp_sources/

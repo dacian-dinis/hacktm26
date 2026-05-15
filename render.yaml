@@ -1,0 +1,33 @@
+# Render blueprint for the Veritas Stack FastAPI backend.
+# Apply via https://render.com/docs/blueprint-spec or paste at
+# https://dashboard.render.com/blueprints.
+#
+# Plan note: the free tier sleeps after 15 min of inactivity and has 512 MB
+# RAM. Once the heavier tier deps land (transformers, OpenCV, c2pa-python,
+# weasyprint) the API will likely need the $7/mo Starter plan to avoid OOM
+# during HF model load.
+services:
+  - type: web
+    name: veritas-stack-api
+    runtime: python
+    rootDir: apps/api
+    plan: free
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Set in dashboard, never in repo:
+      - key: BING_SEARCH_API_KEY
+        sync: false
+      - key: GOOGLE_FACTCHECK_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      # Comma-separated list of additional CORS origins. The Vercel preview
+      # URL pattern lives here; the production Vercel domain too.
+      - key: CORS_ORIGINS
+        sync: false

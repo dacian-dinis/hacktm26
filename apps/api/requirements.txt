@@ -1,0 +1,22 @@
+fastapi>=0.115.5
+uvicorn[standard]>=0.32.0
+pydantic>=2.10.3
+python-multipart>=0.0.12
+
+# Tier 1 — provenance
+c2pa-python>=0.32.6
+imagehash>=4.3.1
+Pillow>=11.0.0
+requests>=2.32.3
+# exiftool is a system binary (not pip-installable). On Render, add to the
+# build step via `apt-get install -y libimage-exiftool-perl`. On Windows dev,
+# install from https://exiftool.org. The EXIF parser falls back to Pillow's
+# built-in ExifTags reader when the binary is missing.
+
+# Tier 2 — forensic
+numpy>=2.1.0
+opencv-python-headless>=4.10.0.84
+
+# Tier 3 — AI signal
+transformers>=4.46.3
+torch>=2.5.1

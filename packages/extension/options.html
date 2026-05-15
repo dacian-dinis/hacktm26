@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Veritas Stack — Options</title>
+    <style>
+      body {
+        font: 14px system-ui, sans-serif;
+        margin: 24px;
+        max-width: 480px;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 16px;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        margin-top: 4px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+      }
+      button {
+        margin-top: 16px;
+        padding: 8px 16px;
+        background: #2563eb;
+        color: #fff;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .ok {
+        color: #16a34a;
+        margin-left: 8px;
+        font-size: 12px;
+      }
+      .hint {
+        color: #6b7280;
+        font-size: 12px;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Veritas Stack — endpoints</h1>
+    <label
+      >API base
+      <input id="apiBase" placeholder="http://localhost:8000"
+    /></label>
+    <label
+      >Web base
+      <input id="webBase" placeholder="http://localhost:3000"
+    /></label>
+    <button id="save">Save</button>
+    <span id="status" class="ok"></span>
+    <p class="hint">
+      Defaults assume the local dev setup. Update these when running against
+      a deployed instance.
+    </p>
+    <script src="options.js"></script>
+  </body>
+</html>

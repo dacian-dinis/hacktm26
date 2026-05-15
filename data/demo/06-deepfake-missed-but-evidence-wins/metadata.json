@@ -1,0 +1,46 @@
+{
+  "slug": "06-deepfake-missed-but-evidence-wins",
+  "title": "Composite the AI face-detector misses; evidence chain catches it",
+  "filename": "asset.jpg",
+  "sha256": "b95a590a9f47789b30531eaa182bf42dfd89f2f70b8b09a6ce6f24ee080ad1ce",
+  "phash": "c4651bd03fcf3498",
+  "dhash": "71d0e6a2a0b4e071",
+  "source_url": "Generated locally from CC-licensed Wikimedia + synthetic face",
+  "license": "Derivative \u2014 Apollo 17 (public domain) + StyleGAN synthetic face (non-copyrighted)",
+  "construction": "A real (untouched) synthetic-face crop is feathered and pasted onto the Apollo 17 base. The face itself is unmanipulated AI-generated, so a face-deepfake classifier may correctly classify the face region as 'synthetic' OR as 'real' depending on its training distribution \u2014 but in either case the AI tier does NOT detect the scene-level manipulation. Tiers 1, 2, and 4 still expose the composite.",
+  "swap_in_note": "For the strongest demo beat ('AI says real, evidence catches'), replace the face source with a real-person photo where the AI classifier outputs 'real' with high confidence. Re-run this script after dropping a replacement face.jpg into /tmp/dl/.",
+  "expected_findings": [
+    {
+      "tier": 1,
+      "check": "c2pa.signature.verify",
+      "result": "fail",
+      "note": "No manifest \u2014 first red flag, deterministic"
+    },
+    {
+      "tier": 1,
+      "check": "bing.reverse_image",
+      "result": "fail",
+      "note": "Base scene matches Apollo 17, 1972 \u2014 incompatible with any 'current event' claim"
+    },
+    {
+      "tier": 2,
+      "check": "forensic.ela",
+      "result": "fail",
+      "note": "Pasted face region carries different compression history"
+    },
+    {
+      "tier": 3,
+      "check": "ai.deepfake.vit",
+      "result": "indeterminate",
+      "note": "Face-deepfake classifier was not trained to detect scene-level compositing; this is exactly where AI-only verdicts fail",
+      "caveat": "If T3 returns 'real' here, that is the 'AI is wrong, evidence is right' beat \u2014 the report still says UNVERIFIED because of T1/T2/T4."
+    },
+    {
+      "tier": 4,
+      "check": "osint.factcheck",
+      "result": "indeterminate",
+      "note": "No corroboration for an unverified scene"
+    }
+  ],
+  "demo_narration": "This is the asset that wins the round. The off-the-shelf AI was trained on face deepfakes; this is a context manipulation. The AI tier signals 'no face-level deepfake detected' \u2014 and is technically correct. The verification chain still emits UNVERIFIED because Tier 1 has no provenance, reverse-image lands a 1972 NASA archive, and Tier 2 ELA exposes the composite. The analyst signs UNVERIFIED. The AI was wrong; the audit trail was right."
+}

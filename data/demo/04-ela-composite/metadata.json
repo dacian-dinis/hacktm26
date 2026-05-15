@@ -1,0 +1,32 @@
+{
+  "slug": "04-ela-composite",
+  "title": "Obvious composite (ELA target)",
+  "filename": "asset.jpg",
+  "sha256": "9f217742479ec6cf85179a83aa521987c706a7c3fe48d8e2f6c748f37b1ff112",
+  "phash": "c26c1bd26e2f3c98",
+  "dhash": "71c0e2a2e0c8c869",
+  "source_url": "Generated locally from CC-licensed Wikimedia sources",
+  "license": "Derivative CC BY-SA 3.0 (Cat03) + Public Domain (Apollo 17) \u2014 generated for demo",
+  "construction": "Apollo 17 base image with the Cat03 photo pasted in at quality 60 before the final save at quality 92. The compression-level discontinuity is exactly what ELA visualises.",
+  "expected_findings": [
+    {
+      "tier": 1,
+      "check": "c2pa.signature.verify",
+      "result": "fail",
+      "note": "No manifest"
+    },
+    {
+      "tier": 2,
+      "check": "forensic.ela",
+      "result": "fail",
+      "note": "Pasted region shows distinctly higher error level than base"
+    },
+    {
+      "tier": 2,
+      "check": "forensic.noise_residual",
+      "result": "fail",
+      "note": "Noise pattern discontinuity at composite edges"
+    }
+  ],
+  "demo_narration": "Tier 2 is the visual wow: side-by-side ELA viewer lights up the pasted region. Inspectable forensics \u2014 no black box."
+}

@@ -1,0 +1,31 @@
+{
+  "slug": "01-c2pa-authentic",
+  "title": "C2PA-signed authentic image (CAI test fixture)",
+  "filename": "asset.jpg",
+  "sha256": "e71bff58fc57640803e6e65f7534e2fb0c2f99018c85276cc14b30f04427cc76",
+  "phash": "979c61c6032439ff",
+  "dhash": "e86868e8e8ec4c4c",
+  "source_url": "https://github.com/contentauth/c2pa-rs/blob/main/sdk/tests/fixtures/CA.jpg",
+  "license": "Apache-2.0 / MIT (test fixture distributed with c2pa-rs)",
+  "expected_findings": [
+    {
+      "tier": 1,
+      "check": "c2pa.signature.verify",
+      "result": "pass",
+      "note": "Manifest present and signed by Adobe CAI test root"
+    },
+    {
+      "tier": 1,
+      "check": "exif.parse",
+      "result": "pass",
+      "note": "EXIF intact, capture metadata coherent"
+    },
+    {
+      "tier": 4,
+      "check": "osint.factcheck",
+      "result": "indeterminate",
+      "note": "No claim to corroborate \u2014 this is a benign authenticity demo"
+    }
+  ],
+  "demo_narration": "This is what a properly-signed image looks like. Tier 1 returns deterministic 'pass' on the cryptographic signature \u2014 that is the only kind of 100%-accurate finding the system will ever produce."
+}

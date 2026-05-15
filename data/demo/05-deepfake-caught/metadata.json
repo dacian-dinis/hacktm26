@@ -1,0 +1,26 @@
+{
+  "slug": "05-deepfake-caught",
+  "title": "Synthetic face (StyleGAN, AI tier catches)",
+  "filename": "asset.jpg",
+  "sha256": "d029c9dbb9b4c487d9ccfecf1d67d41d5363e75d2ef222d23ec1fa6c72c103f9",
+  "phash": "f87863a52463dac3",
+  "dhash": "1739b9159a1ade5c",
+  "source_url": "https://thispersondoesnotexist.com/",
+  "license": "Synthetic \u2014 not a real person. StyleGAN-generated images are not copyrighted.",
+  "expected_findings": [
+    {
+      "tier": 1,
+      "check": "c2pa.signature.verify",
+      "result": "fail",
+      "note": "No manifest"
+    },
+    {
+      "tier": 3,
+      "check": "ai.deepfake.vit",
+      "result": "fail",
+      "note": "Wvolf/ViT_Deepfake_Detection flags as synthetic \u2014 one signal among many",
+      "caveat": "Model trained on FaceForensics++; confidence shown but never used as verdict"
+    }
+  ],
+  "demo_narration": "Tier 3 is the AI signal. When it agrees with Tiers 1 and 2, the report is consistent. We always present it as one input among many."
+}

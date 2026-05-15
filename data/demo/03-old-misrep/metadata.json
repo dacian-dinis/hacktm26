@@ -1,0 +1,32 @@
+{
+  "slug": "03-old-misrep",
+  "title": "Old image (Apollo 17, 1972) misrepresented as new",
+  "filename": "asset.jpg",
+  "sha256": "c8723fcf6a010806c1749d5f6ee50fc83f58fa0f713672c43f243f11fcd0a79a",
+  "phash": "c4651bd83e8f3c98",
+  "dhash": "71c0e6a2b4b4e071",
+  "source_url": "https://commons.wikimedia.org/wiki/File:The_Earth_seen_from_Apollo_17.jpg",
+  "license": "Public domain \u2014 NASA, 1972",
+  "expected_findings": [
+    {
+      "tier": 1,
+      "check": "bing.reverse_image",
+      "result": "fail",
+      "note": "Earliest hit is 1972 NASA archive \u2014 image predates any 'new satellite footage' claim"
+    },
+    {
+      "tier": 1,
+      "check": "exif.parse",
+      "result": "indeterminate",
+      "note": "EXIF stripped on re-upload (expected for repurposed images)"
+    },
+    {
+      "tier": 1,
+      "check": "c2pa.signature.verify",
+      "result": "fail",
+      "note": "No C2PA manifest \u2014 image cannot be authenticated at the bit level"
+    }
+  ],
+  "demo_narration": "Tier 1 reverse-image search lands the demo's killer beat for the Romanian election narrative: 'this 2024 satellite image of a missile site' is actually a 1972 NASA photograph.",
+  "real_world_parallel": "During the 2024 Romanian election cycle, multiple recycled images from prior conflicts circulated on TikTok and Telegram as new evidence."
+}

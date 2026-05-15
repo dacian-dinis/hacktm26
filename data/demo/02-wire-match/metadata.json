@@ -1,0 +1,27 @@
+{
+  "slug": "02-wire-match",
+  "title": "Wire-style editorial photo (Wikimedia Commons CC BY-SA)",
+  "filename": "asset.jpg",
+  "sha256": "bad03139e50ab88517bf1df8f4f186c9650fb00bc2da5253104ff69306923ca0",
+  "phash": "bcca96c0f1f1b1b0",
+  "dhash": "1427361f9636363e",
+  "source_url": "https://commons.wikimedia.org/wiki/File:Cat03.jpg",
+  "license": "CC BY-SA 3.0 \u2014 Alvesgaspar, Wikimedia Commons",
+  "wire_db_seed_hash": "bcca96c0f1f1b1b0",
+  "expected_findings": [
+    {
+      "tier": 1,
+      "check": "phash.wire_db_match",
+      "result": "pass",
+      "note": "pHash matches a seeded wire-service entry (Hamming distance 0)"
+    },
+    {
+      "tier": 1,
+      "check": "bing.reverse_image",
+      "result": "pass",
+      "note": "Earliest hit predates the alleged context \u2014 real-world parallel: Reuters/AP photos resurfacing"
+    }
+  ],
+  "demo_narration": "If the image already exists in a trusted wire-service feed, perceptual hashing matches it deterministically. The analyst no longer needs the AI to weigh in.",
+  "real_world_parallel": "Routine OSINT pattern: a viral 'breaking' photo is actually a wire image lifted from Reuters/AP archives hours or years earlier."
+}
