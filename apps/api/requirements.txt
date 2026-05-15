@@ -17,9 +17,8 @@ requests>=2.32.3
 numpy>=2.1.0
 opencv-python-headless>=4.10.0.84
 
-# Tier 3 — AI signal
-transformers>=4.46.3
-torch>=2.5.1
+# Tier 3 — AI signal (uses HF Inference API; no local torch/transformers)
+# Just `requests` from the Tier 1 block above.
 
 # Report PDF export
 fpdf2>=2.7.9

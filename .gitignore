@@ -44,3 +44,5 @@ report-output/
 
 # Intermediate source images for demo asset builder (rebuilt by scripts/build_demo_assets.py)
 tmp_sources/
+.vercel
+.env*.local
