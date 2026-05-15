@@ -74,7 +74,9 @@ def match_wire_phash(
     for entry in db:
         if "phash" not in entry:
             continue
-        distance = phash - _hex_to_hash(entry["phash"])
+        # imagehash returns numpy.int64 for the XOR popcount — cast to int
+        # so the Finding serializes cleanly through pydantic.
+        distance = int(phash - _hex_to_hash(entry["phash"]))
         if distance < best_distance:
             best_distance = distance
             best = entry
@@ -82,8 +84,8 @@ def match_wire_phash(
     evidence: dict = {
         "input_phash": str(phash),
         "input_dhash": str(dhash),
-        "db_size": len(db),
-        "threshold": threshold,
+        "db_size": int(len(db)),
+        "threshold": int(threshold),
     }
 
     if best is None:
@@ -102,7 +104,7 @@ def match_wire_phash(
     evidence["best_match"] = {
         "url": best.get("url"),
         "caption": best.get("caption"),
-        "hamming_distance": best_distance,
+        "hamming_distance": int(best_distance),
     }
 
     matched = best_distance <= threshold

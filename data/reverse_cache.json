@@ -1,0 +1,68 @@
+{
+  "e71bff58fc57640803e6e65f7534e2fb0c2f99018c85276cc14b30f04427cc76": [
+    {
+      "url": "https://contentauthenticity.org/blog/c2pa-test-fixtures",
+      "thumbnail": null,
+      "name": "C2PA test fixtures — Content Authenticity Initiative",
+      "host": "contentauthenticity.org",
+      "datePublished": "2023-11-02T00:00:00Z"
+    }
+  ],
+  "bad03139e50ab88517bf1df8f4f186c9650fb00bc2da5253104ff69306923ca0": [
+    {
+      "url": "https://commons.wikimedia.org/wiki/File:Nicu%C8%99or_Dan_2024.jpg",
+      "thumbnail": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Nicu%C8%99or_Dan_2024.jpg/240px-Nicu%C8%99or_Dan_2024.jpg",
+      "name": "Nicușor Dan, 2024 — Wikimedia Commons",
+      "host": "commons.wikimedia.org",
+      "datePublished": "2024-06-15T10:22:00Z"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Nicu%C8%99or_Dan",
+      "thumbnail": null,
+      "name": "Nicușor Dan — Wikipedia",
+      "host": "en.wikipedia.org",
+      "datePublished": "2024-08-01T00:00:00Z"
+    }
+  ],
+  "c8723fcf6a010806c1749d5f6ee50fc83f58fa0f713672c43f243f11fcd0a79a": [
+    {
+      "url": "https://images.nasa.gov/details/AS17-148-22727",
+      "thumbnail": "https://images-assets.nasa.gov/image/AS17-148-22727/AS17-148-22727~thumb.jpg",
+      "name": "Apollo 17 — The Blue Marble (AS17-148-22727)",
+      "host": "images.nasa.gov",
+      "datePublished": "1972-12-07T10:39:00Z"
+    },
+    {
+      "url": "https://www.nasa.gov/history/the-blue-marble-the-view-from-apollo-17/",
+      "thumbnail": null,
+      "name": "The Blue Marble: The View From Apollo 17 — NASA",
+      "host": "nasa.gov",
+      "datePublished": "1972-12-07T00:00:00Z"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/The_Blue_Marble",
+      "thumbnail": null,
+      "name": "The Blue Marble — Wikipedia",
+      "host": "en.wikipedia.org",
+      "datePublished": "2003-04-12T00:00:00Z"
+    }
+  ],
+  "9f217742479ec6cf85179a83aa521987c706a7c3fe48d8e2f6c748f37b1ff112": [],
+  "d029c9dbb9b4c487d9ccfecf1d67d41d5363e75d2ef222d23ec1fa6c72c103f9": [],
+  "b95a590a9f47789b30531eaa182bf42dfd89f2f70b8b09a6ce6f24ee080ad1ce": [
+    {
+      "url": "https://images.nasa.gov/details/AS17-148-22727",
+      "thumbnail": "https://images-assets.nasa.gov/image/AS17-148-22727/AS17-148-22727~thumb.jpg",
+      "name": "Apollo 17 — The Blue Marble (AS17-148-22727) — base scene matches",
+      "host": "images.nasa.gov",
+      "datePublished": "1972-12-07T10:39:00Z"
+    },
+    {
+      "url": "https://www.nasa.gov/history/the-blue-marble-the-view-from-apollo-17/",
+      "thumbnail": null,
+      "name": "The Blue Marble: The View From Apollo 17 — NASA",
+      "host": "nasa.gov",
+      "datePublished": "1972-12-07T00:00:00Z"
+    }
+  ]
+}
