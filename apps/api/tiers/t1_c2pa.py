@@ -3,7 +3,7 @@
 This is the only check in the entire stack that can claim *deterministic*
 confidence: signature verification is a mathematical property of the file's
 bytes, not a probability. That is the headline differentiator from
-classifier-based competitors. See PLAN.md §1 ("Provenance over prediction").
+classifier-based competitors.
 
 Three outcomes:
   - pass:           a manifest is embedded and cryptographically valid

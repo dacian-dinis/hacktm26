@@ -16,7 +16,7 @@
 #     to the current upload URL — the script just follows redirects.
 #
 # Curated to match the demo narrative (Romania election + NATO + Ukraine).
-# Expand toward ~200 entries during Phase 1 hour 4 (see PLAN.md §6).
+# Expand toward ~200 entries to widen the wire-match coverage.
 
 # --- Romania 2024-25 election cycle ---
 https://commons.wikimedia.org/wiki/Special:FilePath/Nicu%C8%99or_Dan_2024.jpg
