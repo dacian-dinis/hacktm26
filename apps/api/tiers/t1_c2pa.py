@@ -103,7 +103,7 @@ def verify_c2pa(image_path: str | Path) -> Finding:
     try:
         manifest_json = json.loads(reader.json())
         validation_state = str(reader.get_validation_state())
-        is_valid = bool(reader.is_valid())
+        is_valid = bool(reader.is_valid)
         is_embedded = bool(reader.is_embedded())
         signer_summary = _extract_signer_summary(manifest_json)
     finally:

@@ -29,7 +29,7 @@ from models import Finding
 
 
 HF_MODEL = "Wvolf/ViT_Deepfake_Detection"
-HF_ENDPOINT = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+HF_ENDPOINT = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
 HF_TIMEOUT = 60
 
 
