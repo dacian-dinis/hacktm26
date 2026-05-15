@@ -11,18 +11,26 @@ one-click curated demo assets (see `data/demo/`).
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
+from export import ExportRequest, render_pdf, report_sha256, sign_report
 from models import Finding, Report
 from tiers import analyze_tier2, get_tier4_findings, run_tier1
 from tiers.t3_ai import analyze_t3_ai
+
+# URL-only input cap: refuse anything over 25MB to avoid being weaponized
+# as a download proxy. Demo images are << 5MB.
+_URL_FETCH_MAX_BYTES = 25 * 1024 * 1024
+_URL_FETCH_TIMEOUT = 15
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO_DIR = REPO_ROOT / "data" / "demo"
@@ -63,21 +71,74 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _fetch_url_bytes(url: str) -> tuple[bytes, str]:
+    """Download an image from a URL with size + content-type guards.
+
+    Returns (raw_bytes, filename). Raises HTTPException on failure so the
+    caller can surface it as a clean 4xx rather than a 5xx.
+    """
+    try:
+        resp = requests.get(
+            url,
+            stream=True,
+            timeout=_URL_FETCH_TIMEOUT,
+            headers={"User-Agent": "VeritasStack/0.1 (+https://github.com/dacian-dinis/hacktm26)"},
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=400, detail=f"URL fetch failed: {exc}")
+
+    content_type = (resp.headers.get("Content-Type") or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"URL did not return an image (Content-Type: {content_type or 'unknown'})",
+        )
+
+    buf = bytearray()
+    for chunk in resp.iter_content(chunk_size=64 * 1024):
+        buf.extend(chunk)
+        if len(buf) > _URL_FETCH_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="URL fetch exceeds 25MB cap")
+
+    # Derive a filename so the tier1 EXIF / C2PA path-based readers get a hint.
+    last = url.rsplit("/", 1)[-1].split("?", 1)[0] or "image"
+    if "." not in last:
+        ext = content_type.split("/", 1)[1].split(";", 1)[0] or "jpg"
+        last = f"{last}.{ext}"
+    return bytes(buf), last
+
+
 @app.post("/verify", response_model=Report)
 async def verify(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     url: str | None = Form(None),
     query: str | None = Form(None),
 ) -> Report:
-    raw = await file.read()
+    """Run the verification pipeline on either an uploaded image or a URL.
+
+    At least one of `file` or `url` is required. When both are present,
+    the uploaded bytes win and `url` is still passed to Tier 4 for source
+    reputation / telegram checks.
+    """
+    if file is not None and file.filename:
+        raw = await file.read()
+        filename = file.filename
+    elif url:
+        raw, filename = _fetch_url_bytes(url)
+    else:
+        raise HTTPException(
+            status_code=400, detail="Provide either an uploaded file or a url."
+        )
+
     input_hash = hashlib.sha256(raw).hexdigest()
 
     # If no explicit claim query, fall back to the filename so the
     # fact-check tier still has something to search against.
-    t4_query = query or file.filename
+    t4_query = query or filename
 
     findings: list[Finding] = [
-        *run_tier1(raw, file.filename),
+        *run_tier1(raw, filename),
         *[Finding.model_validate(finding) for finding in analyze_tier2(raw)],
         *get_tier4_findings(query=t4_query, url=url),
     ]
@@ -87,6 +148,27 @@ async def verify(
     findings.append(t3_finding)
 
     return Report(input_hash=input_hash, findings=findings)
+
+
+@app.post("/export")
+def export(req: ExportRequest) -> StreamingResponse:
+    """Sign + render the report as PDF.
+
+    Body: {"report": <Report>, "analyst_name": "..." (optional)}.
+    If `analyst_name` is omitted/blank, the PDF is exported unsigned.
+    The PDF embeds a `report_sha256` so the served JSON and the printed
+    PDF are byte-verifiable against each other.
+    """
+    signed = sign_report(req.report, req.analyst_name)
+    pdf_bytes = render_pdf(signed, report_sha256(signed))
+    short = signed.input_hash[:8] or "report"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="veritas_{short}.pdf"'
+        },
+    )
 
 
 def _load_demo_index() -> list[dict]:

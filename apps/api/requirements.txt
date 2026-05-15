@@ -20,3 +20,6 @@ opencv-python-headless>=4.10.0.84
 # Tier 3 — AI signal
 transformers>=4.46.3
 torch>=2.5.1
+
+# Report PDF export
+fpdf2>=2.7.9
