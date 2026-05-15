@@ -1,8 +1,27 @@
-import requests
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional
+
+import requests
+
 from models import Finding
+
+# Strip ?key=... / &key=... / token=... from any string before it lands in
+# evidence — requests' HTTPError str() includes the full request URL, which
+# previously leaked the Google API key into PDF reports.
+_SECRET_QS = re.compile(r"([?&])(key|api[_-]?key|token|apikey)=[^&\s]+", re.IGNORECASE)
+
+
+def _redact(s: str) -> str:
+    return _SECRET_QS.sub(r"\1\2=<redacted>", s)
+
+
+# Heuristic: treat the query as a bare filename when it ends in an image
+# extension and contains no spaces. Filenames are not claims and just earn
+# a 400 from Google. Skip the call instead.
+_FILENAME_RE = re.compile(r"^[^\s/]+\.(jpe?g|png|webp|gif|tiff?|bmp|heic)$", re.IGNORECASE)
+
 
 def search_claims(query: str, api_key: Optional[str] = None) -> Finding:
     """
@@ -10,7 +29,7 @@ def search_claims(query: str, api_key: Optional[str] = None) -> Finding:
     Returns a Finding object.
     """
     key = api_key or os.getenv("GOOGLE_FACTCHECK_API_KEY")
-    
+
     if not key:
         return Finding(
             tier=4,
@@ -18,6 +37,24 @@ def search_claims(query: str, api_key: Optional[str] = None) -> Finding:
             result="indeterminate",
             confidence="low",
             evidence={"error": "Missing GOOGLE_FACTCHECK_API_KEY"},
+            source="google.factcheck",
+            timestamp=datetime.now(timezone.utc)
+        )
+
+    if not query or _FILENAME_RE.match(query.strip()):
+        return Finding(
+            tier=4,
+            check="google.factcheck.search",
+            result="indeterminate",
+            confidence="low",
+            evidence={
+                "query": query,
+                "note": (
+                    "No claim text provided — fact-check search skipped. "
+                    "Pass a sentence-level claim via the /verify `query` field "
+                    "for Tier 4 corroboration."
+                ),
+            },
             source="google.factcheck",
             timestamp=datetime.now(timezone.utc)
         )
@@ -78,13 +115,27 @@ def search_claims(query: str, api_key: Optional[str] = None) -> Finding:
             timestamp=datetime.now(timezone.utc)
         )
 
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        return Finding(
+            tier=4,
+            check="google.factcheck.search",
+            result="indeterminate",
+            confidence="low",
+            evidence={
+                "error": f"HTTP {status}" if status else _redact(str(e)),
+                "query": query,
+            },
+            source="google.factcheck",
+            timestamp=datetime.now(timezone.utc)
+        )
     except Exception as e:
         return Finding(
             tier=4,
             check="google.factcheck.search",
             result="indeterminate",
             confidence="low",
-            evidence={"error": str(e), "query": query},
+            evidence={"error": _redact(str(e)), "query": query},
             source="google.factcheck",
             timestamp=datetime.now(timezone.utc)
         )
