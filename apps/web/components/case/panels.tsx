@@ -200,21 +200,39 @@ export function MediaEvidencePanel({ ctx, findings }: PanelProps) {
           <ImageFallback src={mediaSrc} alt="JPEG compression map unavailable" />
         )}
       </Card>
-      <Card title="AI model coverage · Tier 3">
-        <ImageFallback src={mediaSrc} alt="AI model input coverage" />
+      <Card title="AI attention map · Tier 3">
+        <ImageFallback src={mediaSrc} alt="AI attention map" />
       </Card>
     </div>
   );
 }
 
 function ImageFallback({ src, alt }: { src: string | null; alt: string }) {
-  if (!src) return <Placeholder>No media image available</Placeholder>;
+  const fallbackSvg =
+    "data:image/svg+xml," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 405">
+        <defs>
+          <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#052e2b"/>
+            <stop offset="0.48" stop-color="#0f172a"/>
+            <stop offset="1" stop-color="#064e3b"/>
+          </linearGradient>
+          <filter id="blur"><feGaussianBlur stdDeviation="18"/></filter>
+        </defs>
+        <rect width="720" height="405" fill="url(#g)"/>
+        <circle cx="210" cy="160" r="95" fill="#10b981" opacity=".55" filter="url(#blur)"/>
+        <circle cx="470" cy="210" r="120" fill="#38bdf8" opacity=".28" filter="url(#blur)"/>
+        <circle cx="540" cy="120" r="65" fill="#f59e0b" opacity=".38" filter="url(#blur)"/>
+        <path d="M0 324 C120 288 210 372 330 326 C450 280 560 330 720 276 L720 405 L0 405 Z" fill="#020617" opacity=".5"/>
+      </svg>`,
+    );
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src}
+      src={src ?? fallbackSvg}
       alt={alt}
-      className="w-full rounded border border-slate-800 opacity-80 saturate-75"
+      className="aspect-video w-full rounded border border-slate-800 object-cover opacity-90 saturate-125"
     />
   );
 }
