@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
-import pytest
 
 from tiers.t4_factcheck import search_claims
 from tiers.t4_source_reputation import check_source_reputation
@@ -35,18 +34,21 @@ def test_telegram_reputation_unknown():
 def test_interface_calls_all():
     with patch('tiers.t4_interface.check_source_reputation') as mock_rep, \
          patch('tiers.t4_interface.check_telegram_reputation') as mock_tele, \
-         patch('tiers.t4_interface.search_claims') as mock_fact:
+         patch('tiers.t4_interface.search_claims') as mock_fact, \
+         patch('tiers.t4_interface.build_lookup_pack') as mock_pack:
         
         mock_rep.return_value = Finding(tier=4, check="rep", result="pass", confidence="high", source="s", timestamp=datetime.now(timezone.utc))
         mock_tele.return_value = Finding(tier=4, check="tele", result="pass", confidence="high", source="s", timestamp=datetime.now(timezone.utc))
         mock_fact.return_value = Finding(tier=4, check="fact", result="pass", confidence="high", source="s", timestamp=datetime.now(timezone.utc))
+        mock_pack.return_value = Finding(tier=4, check="pack", result="indeterminate", confidence="medium", source="s", timestamp=datetime.now(timezone.utc))
         
         findings = get_tier4_findings(query="test", url="https://t.me/propagator")
         
-        assert len(findings) == 3
+        assert len(findings) == 4
         mock_rep.assert_called_once()
         mock_tele.assert_called_once_with("https://t.me/propagator")
         mock_fact.assert_called_once_with("test", api_key=None)
+        mock_pack.assert_called_once_with(query="test", url="https://t.me/propagator")
 
 @patch('requests.get')
 def test_fact_check_fail(mock_get):

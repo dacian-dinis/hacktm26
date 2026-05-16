@@ -590,8 +590,8 @@ export function deriveSubClaims(
   const factcheck = byCheck(findings, "google.factcheck.search");
   const factRating = ev<string>(factcheck, "rating");
   const factClaim = ev<string>(factcheck, "claim");
-  const sourceRep = byCheck(findings, "source.reputation");
-  const telegram = byCheck(findings, "telegram.reputation");
+  const sourceRep = byCheck(findings, "source.reputation.lookup");
+  const telegram = byCheck(findings, "osint.telegram.reputation");
   const ela = byCheck(findings, "forensics.ela");
   const noise = byCheck(findings, "forensics.noise_residual");
   const c2pa = byCheck(findings, "c2pa.signature.verify");
@@ -706,17 +706,17 @@ export function deriveSubClaims(
     const contra: FindingRef[] = [];
     if (sourceRep && sourceRep.result === "pass")
       support.push({
-        check: "source.reputation",
+        check: "source.reputation.lookup",
         reason: "Source domain is in the trusted set.",
       });
     if (sourceRep && sourceRep.result === "fail")
       contra.push({
-        check: "source.reputation",
+        check: "source.reputation.lookup",
         reason: "Source domain is in the known-disinformation set.",
       });
     if (telegram && telegram.result === "fail")
       contra.push({
-        check: "telegram.reputation",
+        check: "osint.telegram.reputation",
         reason: "Telegram handle flagged in the curated disinfo list.",
       });
     if (c2paPass)
@@ -816,8 +816,8 @@ export function deriveStrength(
   const ela = byCheck(findings, "forensics.ela");
   const noise = byCheck(findings, "forensics.noise_residual");
   const t3 = byCheck(findings, "ai.deepfake.vit");
-  const sourceRep = byCheck(findings, "source.reputation");
-  const telegram = byCheck(findings, "telegram.reputation");
+  const sourceRep = byCheck(findings, "source.reputation.lookup");
+  const telegram = byCheck(findings, "osint.telegram.reputation");
   const factcheck = byCheck(findings, "google.factcheck.search");
 
   // 1. Provenance ----------------------------------------------------------
@@ -1055,7 +1055,10 @@ function buildSummary(
   if (tensions.some((t) => t.severity === "high"))
     parts.push("unresolved high-severity tension");
   const reason = parts.length ? parts.join("; ") : "evidence axes are balanced";
-  return `Verification confidence: ${level} — ${reason}.`;
+  if (level === "limited" || level === "missing") {
+    return `Evidence coverage is ${level}; missing axes are collection gaps, not authenticity failures — ${reason}.`;
+  }
+  return `Evidence coverage is ${level} — ${reason}.`;
 }
 
 // --- chain of custody ---------------------------------------------------
@@ -1178,7 +1181,7 @@ export function deriveDeception(
   const reverse = byCheck(findings, "reverse_image.lookup");
   const earliest = safeDate(ev<string>(reverse, "earliest_seen") ?? null);
   const claimed = safeDate(intake.claimedDateTime);
-  const sourceRep = byCheck(findings, "source.reputation");
+  const sourceRep = byCheck(findings, "source.reputation.lookup");
   const factcheck = byCheck(findings, "google.factcheck.search");
   const ela = byCheck(findings, "forensics.ela");
   const noise = byCheck(findings, "forensics.noise_residual");
@@ -1249,7 +1252,7 @@ export function deriveDeception(
           ? "active"
           : "absent",
     affectedClaims: ["Source"],
-    evidence: ["source.reputation", "intake.sourceUrl"],
+    evidence: ["source.reputation.lookup", "intake.sourceUrl"],
     explanation:
       "Multiple republications of the same media may launder its origin from an unknown or compromised source.",
     caveat: "Reposting alone is not laundering. Look for chains that obscure first publication.",
@@ -1450,8 +1453,8 @@ export function deriveSourceDossier(
 ): SourceDossier | null {
   if (!intake.sourceUrl.trim() && !intake.claimedSource.trim()) return null;
 
-  const sourceRep = byCheck(findings, "source.reputation");
-  const telegram = byCheck(findings, "telegram.reputation");
+  const sourceRep = byCheck(findings, "source.reputation.lookup");
+  const telegram = byCheck(findings, "osint.telegram.reputation");
   const host = intake.sourceUrl.trim() ? safeUrlHost(intake.sourceUrl) : null;
   const isTelegram = host ? /^t\.me$|^telegram\.me$/i.test(host) : false;
 

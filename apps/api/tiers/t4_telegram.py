@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 from models import Finding
 
 # Curated list of Telegram channels/networks identified as disinformation hubs.

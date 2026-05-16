@@ -101,11 +101,8 @@ export default function Home() {
       const form = new FormData();
       if (targetFile) form.append("file", targetFile);
       if (intake.mediaUrl) form.append("url", intake.mediaUrl);
+      if (intake.sourceUrl) form.append("source_url", intake.sourceUrl);
       if (intake.claimText) form.append("query", intake.claimText);
-      // Source URL (article/post) — backend Tier 4 also accepts a `url`,
-      // but we already use `url` for the media URL. Source URL is analyst
-      // context for now; backend source-rep tier only fires when the media
-      // URL itself is the source link. (Backlog: separate fields.)
       const res = await fetch(`${API_BASE}/verify`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`API ${res.status}`);
       const r = (await res.json()) as Report;

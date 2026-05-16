@@ -14,7 +14,6 @@ import hashlib
 import io
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -113,13 +112,14 @@ def _fetch_url_bytes(url: str) -> tuple[bytes, str]:
 async def verify(
     file: UploadFile | None = File(None),
     url: str | None = Form(None),
+    source_url: str | None = Form(None),
     query: str | None = Form(None),
 ) -> Report:
     """Run the verification pipeline on either an uploaded image or a URL.
 
     At least one of `file` or `url` is required. When both are present,
-    the uploaded bytes win and `url` is still passed to Tier 4 for source
-    reputation / telegram checks.
+    the uploaded bytes win. `source_url` is used for Tier 4 reputation /
+    Telegram checks when the media URL is not itself the source page.
     """
     if file is not None and file.filename:
         raw = await file.read()
@@ -137,10 +137,12 @@ async def verify(
     # fact-check tier still has something to search against.
     t4_query = query or filename
 
+    t4_url = source_url or url
+
     findings: list[Finding] = [
         *run_tier1(raw, filename, image_url=url),
         *[Finding.model_validate(finding) for finding in analyze_tier2(raw)],
-        *get_tier4_findings(query=t4_query, url=url),
+        *get_tier4_findings(query=t4_query, url=t4_url),
     ]
 
     # Tier 3: AI Signal

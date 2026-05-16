@@ -101,13 +101,21 @@ def match_wire_phash(
             timestamp=Finding.now(),
         )
 
-    evidence["best_match"] = {
+    matched = best_distance <= threshold
+    nearest = {
         "url": best.get("url"),
         "caption": best.get("caption"),
         "hamming_distance": int(best_distance),
     }
+    if matched:
+        evidence["best_match"] = nearest
+    else:
+        evidence["nearest_non_match_hamming_distance"] = int(best_distance)
+        evidence["note"] = (
+            "Nearest wire-seed image is outside the match threshold; "
+            "do not treat it as source identification."
+        )
 
-    matched = best_distance <= threshold
     return Finding(
         tier=1,
         check="phash.wire_match",

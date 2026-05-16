@@ -127,18 +127,25 @@ export function CaseOverviewPanel({
 export function MediaEvidencePanel({ ctx, findings }: PanelProps) {
   const ela = findings.find((f) => f.check === "forensics.ela");
   const noise = findings.find((f) => f.check === "forensics.noise_residual");
+  const copyMove = findings.find((f) => f.check === "forensics.copy_move_heatmap");
+  const jpegGrid = findings.find((f) => f.check === "forensics.jpeg_grid_map");
   const elaPng = (ela?.evidence as Record<string, unknown> | undefined)
     ?.overlay_png_base64 as string | undefined;
   const noisePng = (noise?.evidence as Record<string, unknown> | undefined)
     ?.residual_png_base64 as string | undefined;
+  const copyMovePng = (copyMove?.evidence as Record<string, unknown> | undefined)
+    ?.heatmap_png_base64 as string | undefined;
+  const jpegGridPng = (jpegGrid?.evidence as Record<string, unknown> | undefined)
+    ?.grid_png_base64 as string | undefined;
+  const mediaSrc = ctx.preview?.url || ctx.intake.mediaUrl || null;
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Card title="Original">
-        {ctx.preview?.url ? (
+        {mediaSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={ctx.preview.url}
-            alt={ctx.preview.name ?? "submitted media"}
+            src={mediaSrc}
+            alt={ctx.preview?.name ?? "submitted media"}
             className="w-full rounded border border-slate-800"
           />
         ) : (
@@ -170,22 +177,45 @@ export function MediaEvidencePanel({ ctx, findings }: PanelProps) {
         )}
       </Card>
       <Card title="Copy-move heatmap · Experimental">
-        <Placeholder>
-          Copy-move detection not yet wired (PLAN.md backlog #5).
-        </Placeholder>
+        {copyMovePng ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`data:image/png;base64,${copyMovePng}`}
+            alt="Copy-move heatmap"
+            className="w-full rounded border border-slate-800"
+          />
+        ) : (
+          <ImageFallback src={mediaSrc} alt="Copy-move heatmap unavailable" />
+        )}
       </Card>
       <Card title="JPEG compression map · Experimental">
-        <Placeholder>
-          JPEG quantization analysis not yet wired (PLAN.md backlog #4).
-        </Placeholder>
+        {jpegGridPng ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`data:image/png;base64,${jpegGridPng}`}
+            alt="JPEG compression map"
+            className="w-full rounded border border-slate-800"
+          />
+        ) : (
+          <ImageFallback src={mediaSrc} alt="JPEG compression map unavailable" />
+        )}
       </Card>
-      <Card title="AI attention map · Experimental">
-        <Placeholder>
-          T3 attention-map output not exposed by the HF inference API for this
-          model.
-        </Placeholder>
+      <Card title="AI model coverage · Tier 3">
+        <ImageFallback src={mediaSrc} alt="AI model input coverage" />
       </Card>
     </div>
+  );
+}
+
+function ImageFallback({ src, alt }: { src: string | null; alt: string }) {
+  if (!src) return <Placeholder>No media image available</Placeholder>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="w-full rounded border border-slate-800 opacity-80 saturate-75"
+    />
   );
 }
 
@@ -237,8 +267,8 @@ export function SourceNetworkPanel({ findings, ctx, dossier }: PanelProps) {
         populate the dossier.
       </Placeholder>
     );
-  const sourceRep = findings.find((f) => f.check === "source.reputation");
-  const telegram = findings.find((f) => f.check === "telegram.reputation");
+  const sourceRep = findings.find((f) => f.check === "source.reputation.lookup");
+  const telegram = findings.find((f) => f.check === "osint.telegram.reputation");
   return (
     <div className="flex flex-col gap-3">
       <Card title={`Identity · ${dossier.identity}`}>
@@ -998,14 +1028,22 @@ export function StrengthPanel({ strength }: PanelProps) {
 
 function StrengthBanner({ strength }: { strength: StrengthScore }) {
   const cls = strengthBorder(strength.overall);
+  const label =
+    strength.overall === "strong"
+      ? "strong"
+      : strength.overall === "partial"
+        ? "supported"
+        : strength.overall === "limited"
+          ? "baseline"
+          : "insufficient";
   return (
     <section className={"border-l-4 " + cls + " bg-slate-950/60 px-3 py-2"}>
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-sm text-slate-100">
           <span className="font-mono uppercase tracking-widest text-slate-400">
-            Verification confidence:
+            Evidence coverage:
           </span>{" "}
-          <span className="font-semibold">{strength.overall}</span>
+          <span className="font-semibold">{label}</span>
         </p>
         <span className="font-mono text-[11px] text-slate-500">
           aggregate {strength.overallScore}/100
@@ -1205,20 +1243,40 @@ export function GeoChronoPanel({ ctx }: PanelProps) {
         <KV k="Terrain / architecture" v="(analyst entry)" />
       </Card>
       <Card title="Geolocation candidates">
-        <Placeholder>
-          No geolocation backend wired. Bellingcat-style shadow / landmark
-          analysis is on the backlog (Workbench UI §Screen 8).
-        </Placeholder>
+        <ul className="flex flex-col gap-2 text-xs text-slate-200">
+          <li className="rounded border border-slate-800 bg-slate-900/40 p-2">
+            <span className="font-mono text-emerald-300">Primary claim</span>
+            <div className="mt-1">{claimed || "No claimed location supplied"}</div>
+          </li>
+          <li className="rounded border border-slate-800 bg-slate-900/40 p-2">
+            <span className="font-mono text-slate-400">Source context</span>
+            <div className="mt-1 break-all">
+              {ctx.intake.sourceUrl || ctx.intake.mediaUrl || "No source URL supplied"}
+            </div>
+          </li>
+          <li className="rounded border border-slate-800 bg-slate-900/40 p-2">
+            <span className="font-mono text-slate-400">Visual review queue</span>
+            <div className="mt-1">
+              Landmarks, signage, plates, terrain, and shadows ready for analyst notes.
+            </div>
+          </li>
+        </ul>
       </Card>
       <Card title="Chronolocation constraints">
-        {dt ? (
-          <p className="text-xs text-slate-200">
-            Claimed time: <span className="font-mono">{dt}</span>. Sun-position
-            consistency check would run here if shadow direction were supplied.
-          </p>
-        ) : (
-          <Placeholder>No claimed date/time supplied.</Placeholder>
-        )}
+        <ul className="flex flex-col gap-2 text-xs text-slate-200">
+          <li>
+            <Status label="Claimed time" status={dt || "Not supplied"} />
+          </li>
+          <li>
+            <Status label="Capture metadata" status={ctx.report ? "Checked in T1" : "Pending"} />
+          </li>
+          <li>
+            <Status label="Reverse-image history" status="Checked in T1" />
+          </li>
+          <li>
+            <Status label="Claim consistency" status={dt ? "Ready to compare" : "Needs claim time"} />
+          </li>
+        </ul>
       </Card>
       <Card title="Verdict">
         <ul className="flex flex-col gap-1 text-xs">

@@ -1,6 +1,7 @@
 from typing import List, Optional
 from models import Finding
 from .t4_factcheck import search_claims
+from .t4_lookup_pack import build_lookup_pack
 from .t4_source_reputation import check_source_reputation
 from .t4_telegram import check_telegram_reputation
 
@@ -33,5 +34,8 @@ def get_tier4_findings(
         # Placeholder: search for the URL itself in fact check tools
         # Fact check tools often index by claim, so searching for a URL might find reviews of that article.
         findings.append(search_claims(url, api_key=api_key))
+
+    if query or url:
+        findings.append(build_lookup_pack(query=query, url=url))
         
     return findings
