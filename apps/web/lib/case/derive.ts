@@ -7,6 +7,9 @@ import type {
   CollectionGap,
   FindingRef,
   Hypothesis,
+  StrengthAxis,
+  StrengthLevel,
+  StrengthScore,
   SubClaim,
   Tension,
   TimelineEvent,
@@ -776,4 +779,271 @@ function deriveStatus(
   if (contradicting.length > supporting.length) return "contradicted";
   if (supporting.length > contradicting.length) return "supported";
   return "unresolved";
+}
+
+// --- evidence strength rubric --------------------------------------------
+// Six axes. Each rated 0–100. The score answers "how well-supported is any
+// assessment built on this evidence", not "how likely is the image to be
+// fake." Overall confidence is the weighted average plus a missing-evidence
+// penalty for collection gaps.
+
+function levelFor(score: number): StrengthLevel {
+  if (score >= 80) return "strong";
+  if (score >= 50) return "partial";
+  if (score >= 20) return "limited";
+  return "missing";
+}
+
+export function deriveStrength(
+  findings: Finding[],
+  intake: CaseIntake,
+  gaps: CollectionGap[],
+  tensions: Tension[],
+): StrengthScore {
+  const c2pa = byCheck(findings, "c2pa.signature.verify");
+  const exif = byCheck(findings, "exif.metadata.parse");
+  const reverse = byCheck(findings, "reverse_image.lookup");
+  const ela = byCheck(findings, "forensics.ela");
+  const noise = byCheck(findings, "forensics.noise_residual");
+  const t3 = byCheck(findings, "ai.deepfake.vit");
+  const sourceRep = byCheck(findings, "source.reputation");
+  const telegram = byCheck(findings, "telegram.reputation");
+  const factcheck = byCheck(findings, "google.factcheck.search");
+
+  // 1. Provenance ----------------------------------------------------------
+  const provReasons: string[] = [];
+  let prov = 0;
+  if (c2pa?.result === "pass") {
+    prov += 70;
+    provReasons.push("C2PA signature verified");
+  } else if (c2pa && ev<boolean>(c2pa, "manifest_present") === false) {
+    prov += 5;
+    provReasons.push("No C2PA manifest embedded");
+  }
+  const exifHeadline = ev<Record<string, unknown>>(exif, "headline") ?? {};
+  const exifKeys = Object.keys(exifHeadline);
+  if (exifKeys.length > 0) {
+    prov += Math.min(30, exifKeys.length * 5);
+    provReasons.push(`EXIF: ${exifKeys.length} headline tag(s)`);
+  } else if (exif) {
+    provReasons.push("EXIF empty");
+  }
+  prov = Math.min(100, prov);
+
+  // 2. Forensic consistency ------------------------------------------------
+  const forReasons: string[] = [];
+  let forensic = 0;
+  if (ela) {
+    if (isElaElevated(ela)) {
+      forensic += 25;
+      forReasons.push("ELA: localized recompression anomaly present");
+    } else {
+      forensic += 45;
+      forReasons.push("ELA: within baseline");
+    }
+  }
+  if (noise) {
+    if (isNoiseInconsistent(noise)) {
+      forensic += 20;
+      forReasons.push("Noise: inconsistent across regions");
+    } else {
+      forensic += 45;
+      forReasons.push("Noise: uniform residual texture");
+    }
+  }
+  forReasons.push(
+    "Copy-move + JPEG quantization checks not yet wired (backlog #5, #4)",
+  );
+  forensic = Math.min(100, forensic);
+
+  // 3. Source corroboration -----------------------------------------------
+  const srcReasons: string[] = [];
+  let source = 0;
+  const reverseHits = ev<number>(reverse, "hit_count") ?? 0;
+  if (reverseHits > 0) {
+    source += 40;
+    srcReasons.push(`Reverse-image: ${reverseHits} prior web match(es)`);
+  } else if (reverse?.result === "indeterminate") {
+    source += 5;
+    srcReasons.push("Reverse-image: no matches in source");
+  }
+  if (sourceRep) {
+    if (sourceRep.result === "pass") {
+      source += 25;
+      srcReasons.push("Source domain in trusted set");
+    } else if (sourceRep.result === "fail") {
+      source -= 30;
+      srcReasons.push("Source domain in known-disinformation set");
+    }
+  }
+  if (telegram?.result === "fail") {
+    source -= 20;
+    srcReasons.push("Telegram handle flagged");
+  }
+  if (factcheck && ev<string>(factcheck, "rating")) {
+    source += 25;
+    srcReasons.push(
+      `External fact-check hit ("${ev<string>(factcheck, "rating")}")`,
+    );
+  }
+  source = Math.max(0, Math.min(100, source));
+
+  // 4. Temporal consistency ------------------------------------------------
+  const tempReasons: string[] = [];
+  let temporal = 0;
+  const earliestStr = ev<string>(reverse, "earliest_seen");
+  const earliest = safeDate(earliestStr ?? null);
+  const claimedDt = safeDate(intake.claimedDateTime);
+  const c2paSig = ev<Record<string, unknown> | null>(c2pa, "signer");
+  const c2paTime = c2paSig && (c2paSig as Record<string, unknown>).time;
+  const c2paDt = typeof c2paTime === "string" ? safeDate(c2paTime) : null;
+  let temporalSignals = 0;
+  if (earliest) {
+    temporal += 25;
+    tempReasons.push(
+      `Reverse-image earliest_seen: ${earliest.toISOString().slice(0, 10)}`,
+    );
+    temporalSignals++;
+  }
+  if (c2paDt) {
+    temporal += 25;
+    tempReasons.push(
+      `C2PA signing time: ${c2paDt.toISOString().slice(0, 10)}`,
+    );
+    temporalSignals++;
+  }
+  if (claimedDt) {
+    temporal += 25;
+    tempReasons.push(
+      `Analyst-supplied claim date: ${claimedDt.toISOString().slice(0, 10)}`,
+    );
+    temporalSignals++;
+  }
+  if (temporalSignals >= 2) {
+    temporal += 25;
+    tempReasons.push(
+      `${temporalSignals} independent timestamps — cross-checkable`,
+    );
+  }
+  if (!earliestStr && !c2paDt && !claimedDt)
+    tempReasons.push("No timestamps from any source");
+  temporal = Math.min(100, temporal);
+
+  // 5. AI-only reliance (lower is better; we display it inverted) ----------
+  const aiReasons: string[] = [];
+  // How much non-AI signal do we have?
+  const nonAiPasses = [
+    c2pa?.result === "pass",
+    reverseHits > 0,
+    sourceRep?.result === "pass",
+    !!ev<string>(factcheck, "rating"),
+    !!earliest,
+    exifKeys.length > 0,
+  ].filter(Boolean).length;
+  // 0 non-AI signals + a T3 finding → very high AI-only reliance (axis = 10)
+  // 5+ non-AI signals → low AI-only reliance (axis = 95)
+  const aiOnlyScore = Math.min(100, 10 + nonAiPasses * 15);
+  if (t3 && nonAiPasses <= 1)
+    aiReasons.push(
+      "Heavy reliance on T3 — non-AI evidence is sparse. Treat T3 as illustrative, not authoritative.",
+    );
+  else if (nonAiPasses >= 3)
+    aiReasons.push(
+      `${nonAiPasses} non-AI signals present — T3 is one input among many.`,
+    );
+  else
+    aiReasons.push(`${nonAiPasses} non-AI signal(s) — T3 weight is moderate.`);
+
+  // 6. Missing-evidence penalty -------------------------------------------
+  const gapReasons: string[] = gaps.map((g) => g.label);
+  // Each gap removes confidence. Start at 100; -15 per gap, floor at 0.
+  const gapScore = Math.max(0, 100 - gaps.length * 15);
+
+  const axes: StrengthAxis[] = [
+    {
+      id: "provenance",
+      label: "Provenance strength",
+      score: prov,
+      level: levelFor(prov),
+      reasons: provReasons.length ? provReasons : ["No provenance evidence collected"],
+    },
+    {
+      id: "forensic",
+      label: "Forensic consistency",
+      score: forensic,
+      level: levelFor(forensic),
+      reasons: forReasons,
+    },
+    {
+      id: "source",
+      label: "Source corroboration",
+      score: source,
+      level: levelFor(source),
+      reasons: srcReasons.length ? srcReasons : ["No external source signals"],
+    },
+    {
+      id: "temporal",
+      label: "Temporal consistency",
+      score: temporal,
+      level: levelFor(temporal),
+      reasons: tempReasons,
+    },
+    {
+      id: "ai_only",
+      label: "AI-only fallback risk",
+      score: aiOnlyScore,
+      level: levelFor(aiOnlyScore),
+      reasons: aiReasons,
+    },
+    {
+      id: "gaps",
+      label: "Collection coverage",
+      score: gapScore,
+      level: levelFor(gapScore),
+      reasons: gapReasons.length ? gapReasons : ["No collection gaps detected"],
+    },
+  ];
+
+  // Weighted overall. Provenance and source are weighted higher because they
+  // anchor an assessment; AI-only reliance is a guardrail, not a verdict.
+  const overallScore = Math.round(
+    (prov * 0.25 +
+      forensic * 0.15 +
+      source * 0.25 +
+      temporal * 0.15 +
+      aiOnlyScore * 0.1 +
+      gapScore * 0.1),
+  );
+
+  // Penalize for unresolved high-severity tensions.
+  const tensionPenalty = tensions.filter((t) => t.severity === "high").length * 8;
+  const adjusted = Math.max(0, overallScore - tensionPenalty);
+
+  const overall = levelFor(adjusted);
+  const summary = buildSummary(overall, axes, tensions);
+
+  return {
+    axes,
+    overallScore: adjusted,
+    overall,
+    summary,
+  };
+}
+
+function buildSummary(
+  level: StrengthLevel,
+  axes: StrengthAxis[],
+  tensions: Tension[],
+): string {
+  const weak = axes.filter((a) => a.level === "missing" || a.level === "limited");
+  const strong = axes.filter((a) => a.level === "strong");
+  const parts: string[] = [];
+  if (strong.length > 0)
+    parts.push(`strong ${strong.map((a) => a.id).join(", ")}`);
+  if (weak.length > 0)
+    parts.push(`weak ${weak.map((a) => a.id).join(", ")}`);
+  if (tensions.some((t) => t.severity === "high"))
+    parts.push("unresolved high-severity tension");
+  const reason = parts.length ? parts.join("; ") : "evidence axes are balanced";
+  return `Verification confidence: ${level} — ${reason}.`;
 }

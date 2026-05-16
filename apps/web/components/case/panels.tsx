@@ -9,6 +9,9 @@ import type {
   CaseContext,
   CollectionGap,
   Hypothesis,
+  StrengthAxis,
+  StrengthLevel,
+  StrengthScore,
   SubClaim,
   Tension,
   TimelineEvent,
@@ -26,6 +29,7 @@ export interface PanelProps {
   tensions: Tension[];
   gaps: CollectionGap[];
   subClaims: SubClaim[];
+  strength: StrengthScore;
   onSelect: (f: Finding) => void;
   onExportPdf: () => void;
   onDownloadJson: () => void;
@@ -34,12 +38,22 @@ export interface PanelProps {
 
 // --- Case Overview -------------------------------------------------------
 
-export function CaseOverviewPanel({ ctx, findings, hypotheses, gaps, tensions }: PanelProps) {
+export function CaseOverviewPanel({
+  ctx,
+  findings,
+  hypotheses,
+  gaps,
+  tensions,
+  strength,
+}: PanelProps) {
   const topH = [...hypotheses].sort((a, b) =>
     confidenceRank(b.confidence) - confidenceRank(a.confidence),
   )[0];
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="md:col-span-2">
+        <StrengthBanner strength={strength} />
+      </div>
       <Card title="Submission">
         <KV k="Media" v={ctx.preview?.name ?? ctx.intake.mediaUrl ?? "(none)"} />
         <KV k="Source URL" v={ctx.intake.sourceUrl || "—"} />
@@ -580,20 +594,22 @@ export function AssessmentPanel({
   hypotheses,
   tensions,
   gaps,
+  strength,
   onExportPdf,
   onDownloadJson,
   busy,
 }: PanelProps) {
   const [analyst, setAnalyst] = useState(ctx.analystName ?? "");
   const [status, setStatus] = useState<"likely-verified" | "contradicted" | "unverifiable" | "escalate">(
-    suggestStatus(hypotheses, tensions),
+    suggestStatus(hypotheses, tensions, strength),
   );
   const top = [...hypotheses].sort((a, b) =>
     confidenceRank(b.confidence) - confidenceRank(a.confidence),
   )[0];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
+      <StrengthBanner strength={strength} />
       <Card title="Suggested assessment">
         <p className="text-sm text-slate-100">
           Status: <span className="font-mono">{status}</span>
@@ -665,15 +681,22 @@ export function AssessmentPanel({
   );
 }
 
-function suggestStatus(hypotheses: Hypothesis[], tensions: Tension[]) {
+function suggestStatus(
+  hypotheses: Hypothesis[],
+  tensions: Tension[],
+  strength: StrengthScore,
+) {
   const top = [...hypotheses].sort((a, b) =>
     confidenceRank(b.confidence) - confidenceRank(a.confidence),
   )[0];
+  if (strength.overall === "missing") return "unverifiable";
+  if (tensions.some((t) => t.severity === "high")) return "contradicted";
   if (!top) return "unverifiable";
-  if (top.id === "H1" && top.confidence === "high") return "likely-verified";
+  if (top.id === "H1" && top.confidence === "high" && strength.overall !== "limited")
+    return "likely-verified";
   if ((top.id === "H2" || top.id === "H3" || top.id === "H4") && top.confidence !== "insufficient")
     return "contradicted";
-  if (tensions.some((t) => t.severity === "high")) return "contradicted";
+  if (strength.overall === "limited") return "escalate";
   return "unverifiable";
 }
 
@@ -776,4 +799,127 @@ function ReliabilityChip({ label }: { label: string }) {
       {label}
     </span>
   );
+}
+
+// --- Strength rubric -----------------------------------------------------
+
+export function StrengthPanel({ strength }: PanelProps) {
+  return (
+    <div className="flex flex-col gap-3">
+      <StrengthBanner strength={strength} />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {strength.axes.map((a) => (
+          <Card key={a.id} title={a.label}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-2xl text-slate-100">
+                {a.score}
+                <span className="text-xs text-slate-500">/100</span>
+              </span>
+              <StrengthLevelBadge level={a.level} />
+            </div>
+            <StrengthBar score={a.score} level={a.level} />
+            <ul className="mt-2 space-y-0.5 text-[11px] text-slate-400">
+              {a.reasons.map((r, i) => (
+                <li key={i}>· {r}</li>
+              ))}
+            </ul>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StrengthBanner({ strength }: { strength: StrengthScore }) {
+  const cls = strengthBorder(strength.overall);
+  return (
+    <section className={"border-l-4 " + cls + " bg-slate-950/60 px-3 py-2"}>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-sm text-slate-100">
+          <span className="font-mono uppercase tracking-widest text-slate-400">
+            Verification confidence:
+          </span>{" "}
+          <span className="font-semibold">{strength.overall}</span>
+        </p>
+        <span className="font-mono text-[11px] text-slate-500">
+          aggregate {strength.overallScore}/100
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-slate-400">{strength.summary}</p>
+      <div className="mt-2 grid grid-cols-3 gap-1 md:grid-cols-6">
+        {strength.axes.map((a) => (
+          <div
+            key={a.id}
+            className="flex flex-col gap-0.5"
+            title={`${a.label}: ${a.score}/100`}
+          >
+            <span className="truncate font-mono text-[9.5px] uppercase tracking-widest text-slate-500">
+              {a.id}
+            </span>
+            <StrengthBar score={a.score} level={a.level} compact />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StrengthBar({
+  score,
+  level,
+  compact,
+}: {
+  score: number;
+  level: StrengthAxis["level"];
+  compact?: boolean;
+}) {
+  const fill =
+    level === "strong"
+      ? "bg-emerald-500"
+      : level === "partial"
+        ? "bg-sky-500"
+        : level === "limited"
+          ? "bg-amber-500"
+          : "bg-red-500";
+  return (
+    <div
+      className={
+        "w-full overflow-hidden rounded bg-slate-800 " +
+        (compact ? "h-1" : "mt-2 h-1.5")
+      }
+    >
+      <div
+        className={"h-full " + fill}
+        style={{ width: `${Math.max(2, score)}%` }}
+      />
+    </div>
+  );
+}
+
+function StrengthLevelBadge({ level }: { level: StrengthAxis["level"] }) {
+  const cls =
+    level === "strong"
+      ? "bg-emerald-600/30 text-emerald-200 border-emerald-600/60"
+      : level === "partial"
+        ? "bg-sky-700/30 text-sky-200 border-sky-600/60"
+        : level === "limited"
+          ? "bg-amber-700/30 text-amber-200 border-amber-600/60"
+          : "bg-red-700/30 text-red-200 border-red-600/60";
+  return (
+    <span
+      className={
+        "rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest " +
+        cls
+      }
+    >
+      {level}
+    </span>
+  );
+}
+
+function strengthBorder(level: StrengthLevel): string {
+  if (level === "strong") return "border-emerald-500";
+  if (level === "partial") return "border-sky-500";
+  if (level === "limited") return "border-amber-500";
+  return "border-red-500";
 }

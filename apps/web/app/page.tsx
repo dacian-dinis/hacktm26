@@ -15,6 +15,7 @@ import {
   MediaEvidencePanel,
   NotesPanel,
   SourceNetworkPanel,
+  StrengthPanel,
   TensionsPanel,
   TierPanel,
   TimelinePanel,
@@ -24,6 +25,7 @@ import { deriveCaseId } from "@/lib/case/caseId";
 import {
   deriveGaps,
   deriveHypotheses,
+  deriveStrength,
   deriveSubClaims,
   deriveTensions,
   deriveTimeline,
@@ -148,6 +150,10 @@ export default function Home() {
   );
   const tensions = useMemo(() => deriveTensions(findings, intake), [findings, intake]);
   const subClaims = useMemo(() => deriveSubClaims(findings, intake), [findings, intake]);
+  const strength = useMemo(
+    () => deriveStrength(findings, intake, gaps, tensions),
+    [findings, intake, gaps, tensions],
+  );
 
   const byTier = (t: 1 | 2 | 3 | 4) => findings.filter((f) => f.tier === t);
 
@@ -236,6 +242,7 @@ export default function Home() {
     tensions,
     gaps,
     subClaims,
+    strength,
     onSelect: setSelected,
     onExportPdf: exportPdf,
     onDownloadJson: downloadJson,
@@ -319,6 +326,7 @@ export default function Home() {
           {activePanel === "tensions" && <TensionsPanel {...panelProps} />}
           {activePanel === "gaps" && <GapsPanel {...panelProps} />}
           {activePanel === "claims" && <ClaimsPanel {...panelProps} />}
+          {activePanel === "strength" && <StrengthPanel {...panelProps} />}
           {activePanel === "notes" && <NotesPanel {...panelProps} />}
           {activePanel === "assessment" && <AssessmentPanel {...panelProps} />}
         </section>
@@ -341,6 +349,7 @@ function panelTitle(id: PanelId): string {
     tensions: "Analytic Tensions",
     gaps: "Collection Gaps",
     claims: "Claim Ledger",
+    strength: "Evidence Strength Rubric",
     notes: "Analyst Notes",
     assessment: "Final Assessment Builder",
   }[id];

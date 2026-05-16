@@ -18,6 +18,7 @@ export type PanelId =
   | "tensions"
   | "gaps"
   | "claims"
+  | "strength"
   | "notes"
   | "assessment";
 
@@ -133,6 +134,35 @@ export interface SubClaim {
   rationale: string;
 }
 
+// --- Evidence strength rubric --------------------------------------------
+// We score *report quality*, not "fake probability." Each axis answers:
+//   "How well-supported is any assessment we'd make from this evidence?"
+
+export type StrengthLevel = "strong" | "partial" | "limited" | "missing";
+
+export type StrengthAxisId =
+  | "provenance"
+  | "forensic"
+  | "source"
+  | "temporal"
+  | "ai_only"
+  | "gaps";
+
+export interface StrengthAxis {
+  id: StrengthAxisId;
+  label: string;
+  score: number; // 0-100
+  level: StrengthLevel;
+  reasons: string[];
+}
+
+export interface StrengthScore {
+  axes: StrengthAxis[];
+  overallScore: number;
+  overall: StrengthLevel;
+  summary: string;
+}
+
 export interface CaseContext {
   caseId: string;
   handling: string;
@@ -157,6 +187,7 @@ export const PANEL_LABELS: Record<PanelId, string> = {
   tensions: "Analytic Tensions",
   gaps: "Collection Gaps",
   claims: "Claim Ledger",
+  strength: "Evidence Strength",
   notes: "Analyst Notes",
   assessment: "Final Assessment",
 };
@@ -173,6 +204,7 @@ export const PANEL_ORDER: PanelId[] = [
   "tensions",
   "gaps",
   "claims",
+  "strength",
   "notes",
   "assessment",
 ];
