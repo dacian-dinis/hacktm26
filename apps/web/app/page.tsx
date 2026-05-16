@@ -44,13 +44,17 @@ export default function Home() {
     );
   }
 
-  async function verify(target: File) {
+  async function verify(target: File | null) {
+    if (!target && !url) {
+      setError("Provide either an uploaded file or a source URL.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setReport(null);
     try {
       const form = new FormData();
-      form.append("file", target);
+      if (target) form.append("file", target);
       if (url) form.append("url", url);
       if (query) form.append("query", query);
       const res = await fetch(`${API_BASE}/verify`, {
@@ -68,7 +72,7 @@ export default function Home() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (!file && !url) return;
     setDemoSlug(null);
     await verify(file);
   }
@@ -134,9 +138,12 @@ export default function Home() {
             </div>
           </div>
 
-          <Button type="submit" disabled={!file || loading}>
+          <Button type="submit" disabled={(!file && !url) || loading}>
             {loading ? "Verifying…" : "Verify"}
           </Button>
+          <p className="text-xs text-mutedForeground">
+            Provide an uploaded file <em>or</em> a source URL (or both).
+          </p>
           {demoSlug && (
             <p className="text-xs text-mutedForeground">
               Loaded demo asset: <span className="font-mono">{demoSlug}</span>
@@ -163,7 +170,7 @@ export default function Home() {
 
       {loading && <ReportSkeleton />}
       {report && !loading && (
-        <ReportView report={report} preview={preview} />
+        <ReportView report={report} preview={preview} demoSlug={demoSlug} />
       )}
 
       <footer className="mt-8 border-t border-border pt-4 text-xs text-mutedForeground">

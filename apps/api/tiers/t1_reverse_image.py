@@ -131,15 +131,17 @@ def reverse_image_search(
     error: str | None = None
 
     # 1. Cache first — it's authoritative for any hash we've curated, even
-    # when the hit list is intentionally empty.
+    # when the hit list is intentionally empty (i.e. "we checked, nothing").
     cache = _load_cache()
-    if img_hash in cache:
+    cache_hit = img_hash in cache
+    if cache_hit:
         hits = cache[img_hash]
         source = "serpapi.google_lens.cached"
 
-    # 2. Live SerpAPI Google Lens — only viable when the caller supplied a
-    # public URL (uploaded bytes have nowhere to be reached from).
-    if not hits and image_url and api_key:
+    # 2. Live SerpAPI Google Lens — only viable when (a) the cache had no
+    # entry for this hash, (b) the caller supplied a public URL (uploaded
+    # bytes have nowhere to be reached from), and (c) we have a key.
+    if not cache_hit and image_url and api_key:
         try:
             hits = _live_search(image_url, api_key)
         except requests.RequestException as exc:
@@ -147,7 +149,7 @@ def reverse_image_search(
         else:
             source = "serpapi.google_lens"
 
-    if not hits:
+    if not cache_hit and not hits:
         if error is None:
             if not api_key:
                 error = "SERPAPI_API_KEY not set"
@@ -167,12 +169,26 @@ def reverse_image_search(
             evidence={
                 "input_sha256": img_hash,
                 "error": error,
+                "interpretation": (
+                    "No reverse-image lookup performed for this image. "
+                    "Treat as missing evidence, not as a verdict."
+                ),
                 "note": "Add demo-asset hits to data/reverse_cache.json keyed by sha256.",
             },
             source=source,
             timestamp=Finding.now(),
         )
 
+    earliest = _earliest_date(hits)
+    interpretation = (
+        "Image found on prior web pages — confirms the image is not novel. "
+        "Compare `earliest_seen` against the claim's timeline: a 1972 origin "
+        "for an image presented as 2026-fresh is evidence against the claim, "
+        "not for it. Result `pass` here means 'matches found', not 'authentic'."
+        if hits
+        else "No matches in source. Treat as inconclusive — absence of matches "
+             "is not proof of novelty (the cache and provider have finite coverage)."
+    )
     return Finding(
         tier=1,
         check="reverse_image.lookup",
@@ -181,8 +197,9 @@ def reverse_image_search(
         evidence={
             "input_sha256": img_hash,
             "hit_count": len(hits),
-            "earliest_seen": _earliest_date(hits),
+            "earliest_seen": earliest,
             "hits": hits[:10],
+            "interpretation": interpretation,
         },
         source=source,
         timestamp=Finding.now(),

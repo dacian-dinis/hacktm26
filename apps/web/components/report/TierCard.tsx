@@ -38,6 +38,7 @@ export function TierCard({
       </CardHeader>
       {open && (
         <CardContent id={panelId}>
+          {tier === 3 && <Tier3Banner findings={findings} />}
           {findings.length === 0 ? (
             <p className="text-sm text-mutedForeground">No findings yet.</p>
           ) : (
@@ -46,5 +47,37 @@ export function TierCard({
         </CardContent>
       )}
     </Card>
+  );
+}
+
+function Tier3Banner({ findings }: { findings: Finding[] }) {
+  // Model name lives in the first T3 finding's evidence.
+  const ev = (findings[0]?.evidence ?? {}) as Record<string, unknown>;
+  const model =
+    typeof ev.model === "string" ? ev.model : "(model name unavailable)";
+  const trainingData =
+    typeof ev.training_data === "string" ? ev.training_data : null;
+  return (
+    <div
+      role="note"
+      className="mb-4 rounded-md border border-amber-400 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900"
+    >
+      <p className="font-semibold uppercase tracking-wide">
+        AI signal — one input among many. Not authoritative.
+      </p>
+      <p className="mt-1">
+        Model: <span className="font-mono">{model}</span>
+        {trainingData && (
+          <>
+            {" "}
+            · trained on <span className="font-mono">{trainingData}</span>
+          </>
+        )}
+      </p>
+      <p className="mt-1">
+        Tier 3 always returns <span className="font-mono">indeterminate</span>.
+        The verdict lives in the layered evidence above, not in this classifier.
+      </p>
+    </div>
   );
 }
