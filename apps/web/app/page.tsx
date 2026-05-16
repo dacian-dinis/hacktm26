@@ -1,68 +1,100 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { DemoExamples } from "@/components/DemoExamples";
-import { WhyPanel } from "@/components/WhyPanel";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ReportView } from "@/components/report/ReportView";
+import { useEffect, useMemo, useState } from "react";
+import { CaseIntake } from "@/components/case/CaseIntake";
+import { TopBar } from "@/components/case/TopBar";
+import { LeftNav } from "@/components/case/LeftNav";
+import { RightInspector } from "@/components/case/RightInspector";
+import {
+  AssessmentPanel,
+  CaseOverviewPanel,
+  ClaimsPanel,
+  GapsPanel,
+  HypothesesPanel,
+  MediaEvidencePanel,
+  NotesPanel,
+  SourceNetworkPanel,
+  TensionsPanel,
+  TierPanel,
+  TimelinePanel,
+} from "@/components/case/panels";
 import { ReportSkeleton } from "@/components/report/ReportSkeleton";
-import type { Report } from "@/types/report";
+import { deriveCaseId } from "@/lib/case/caseId";
+import {
+  deriveGaps,
+  deriveHypotheses,
+  deriveTensions,
+  deriveTimeline,
+} from "@/lib/case/derive";
+import type {
+  CaseContext,
+  CaseIntake as CaseIntakeData,
+  PanelId,
+  Preview,
+} from "@/types/case";
+import type { Finding, Report } from "@/types/report";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-interface Preview {
-  url: string;
-  name?: string;
-}
+const EMPTY_INTAKE: CaseIntakeData = {
+  mediaFile: null,
+  mediaUrl: "",
+  sourceUrl: "",
+  claimText: "",
+  claimedLocation: "",
+  claimedDateTime: "",
+  claimedSource: "",
+  operationalRelevance: "",
+  analystNotes: "",
+};
 
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
+  const [intake, setIntake] = useState<CaseIntakeData>(EMPTY_INTAKE);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [demoSlug, setDemoSlug] = useState<string | null>(null);
-  const [url, setUrl] = useState("");
-  const [query, setQuery] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activePanel, setActivePanel] = useState<PanelId>("overview");
+  const [selected, setSelected] = useState<Finding | null>(null);
+  const [analystName, setAnalystName] = useState<string | null>(null);
+  const [createdAt, setCreatedAt] = useState<string>("");
 
-  // Revoke object URLs when the preview changes or the page unmounts.
+  // Refresh preview when the file changes.
   useEffect(() => {
-    if (!preview?.url || !preview.url.startsWith("blob:")) return;
-    const u = preview.url;
-    return () => URL.revokeObjectURL(u);
-  }, [preview?.url]);
+    if (!intake.mediaFile) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(intake.mediaFile);
+    setPreview({ url, name: intake.mediaFile.name });
+    return () => URL.revokeObjectURL(url);
+  }, [intake.mediaFile]);
 
-  function setFileWithPreview(next: File | null) {
-    setFile(next);
-    setPreview(
-      next
-        ? { url: URL.createObjectURL(next), name: next.name }
-        : null,
-    );
-  }
-
-  async function verify(target: File | null) {
-    if (!target && !url) {
-      setError("Provide either an uploaded file or a source URL.");
+  async function verify(targetFile: File | null) {
+    if (!targetFile && !intake.mediaUrl.trim()) {
+      setError("Provide a media file or a media URL.");
       return;
     }
     setLoading(true);
     setError(null);
     setReport(null);
+    setSelected(null);
+    setCreatedAt(new Date().toISOString());
     try {
       const form = new FormData();
-      if (target) form.append("file", target);
-      if (url) form.append("url", url);
-      if (query) form.append("query", query);
-      const res = await fetch(`${API_BASE}/verify`, {
-        method: "POST",
-        body: form,
-      });
+      if (targetFile) form.append("file", targetFile);
+      if (intake.mediaUrl) form.append("url", intake.mediaUrl);
+      if (intake.claimText) form.append("query", intake.claimText);
+      // Source URL (article/post) — backend Tier 4 also accepts a `url`,
+      // but we already use `url` for the media URL. Source URL is analyst
+      // context for now; backend source-rep tier only fires when the media
+      // URL itself is the source link. (Backlog: separate fields.)
+      const res = await fetch(`${API_BASE}/verify`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`API ${res.status}`);
-      setReport((await res.json()) as Report);
+      const r = (await res.json()) as Report;
+      setReport(r);
+      setActivePanel("overview");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -70,113 +102,241 @@ export default function Home() {
     }
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!file && !url) return;
-    setDemoSlug(null);
-    await verify(file);
+  async function onPickDemo(slug: string, demoFile: File) {
+    setIntake({ ...intake, mediaFile: demoFile });
+    setDemoSlug(slug);
+    // Defer verify to after the file is in state.
+    setTimeout(() => verify(demoFile), 0);
   }
 
-  async function onPickDemo(slug: string, demoFile: File) {
-    setFileWithPreview(demoFile);
-    setDemoSlug(slug);
-    await verify(demoFile);
+  function resetCase() {
+    setReport(null);
+    setSelected(null);
+    setDemoSlug(null);
+    setIntake(EMPTY_INTAKE);
+    setActivePanel("overview");
+    setError(null);
   }
+
+  // --- derive everything from the live report + intake -------------------
+  const findings = useMemo(() => report?.findings ?? [], [report]);
+  const ctx: CaseContext = useMemo(
+    () => ({
+      caseId: deriveCaseId(createdAt || new Date().toISOString(), report?.input_hash ?? ""),
+      handling: "UNCLASSIFIED // DEMO",
+      analystName,
+      status: report ? (report.analyst_signature ? "signed" : "assessment") : "intake",
+      createdAt: createdAt || new Date().toISOString(),
+      intake,
+      report,
+      preview,
+      demoSlug,
+    }),
+    [analystName, createdAt, demoSlug, intake, preview, report],
+  );
+
+  const gaps = useMemo(() => deriveGaps(findings, intake), [findings, intake]);
+  const hypotheses = useMemo(
+    () => deriveHypotheses(findings, intake, gaps),
+    [findings, intake, gaps],
+  );
+  const timeline = useMemo(
+    () => deriveTimeline(findings, intake, ctx.createdAt, report?.signed_at ?? null),
+    [findings, intake, ctx.createdAt, report?.signed_at],
+  );
+  const tensions = useMemo(() => deriveTensions(findings, intake), [findings, intake]);
+
+  const byTier = (t: 1 | 2 | 3 | 4) => findings.filter((f) => f.tier === t);
+
+  // --- actions -----------------------------------------------------------
+  function downloadJson() {
+    if (!report) return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `veritas_${report.input_hash.slice(0, 8) || "report"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportPdf() {
+    if (!report) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report, analyst_name: analystName ?? "" }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `veritas_${report.input_hash.slice(0, 8) || "report"}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- render ------------------------------------------------------------
+  if (!report && !loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100">
+        <TopBar
+          caseId={deriveCaseId(new Date().toISOString(), "")}
+          handling="UNCLASSIFIED // DEMO"
+          analystName={analystName}
+          status="intake"
+        />
+        <CaseIntake
+          intake={intake}
+          setIntake={setIntake}
+          onSubmit={() => verify(intake.mediaFile)}
+          onPickDemo={onPickDemo}
+          loading={loading}
+          error={error}
+          apiBase={API_BASE}
+        />
+      </main>
+    );
+  }
+
+  if (loading && !report) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100">
+        <TopBar
+          caseId={ctx.caseId}
+          handling={ctx.handling}
+          analystName={analystName}
+          status="triage"
+        />
+        <div className="p-6">
+          <ReportSkeleton />
+        </div>
+      </main>
+    );
+  }
+
+  const panelProps = {
+    ctx,
+    findings,
+    hypotheses,
+    timeline,
+    tensions,
+    gaps,
+    onSelect: setSelected,
+    onExportPdf: exportPdf,
+    onDownloadJson: downloadJson,
+    busy: loading,
+  };
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <header className="flex flex-col gap-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-accent">
-          Veritas Stack &middot; HackTM 2026 &middot; Defense Track
-        </p>
-        <h1 className="text-3xl font-bold leading-tight md:text-4xl">
-          Provenance over prediction.
-        </h1>
-        <p className="max-w-2xl text-sm text-mutedForeground md:text-base">
-          A verification workbench for synthetic and sourced media. Every
-          check emits a structured, signed finding &mdash; the output is an
-          audit trail, not a confidence score.
-        </p>
-      </header>
-
-      <WhyPanel />
-
-      <div className="flex flex-col gap-4 rounded-lg border border-border bg-white p-4 shadow-sm">
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <label className="text-sm font-medium" htmlFor="upload-input">
-            Upload an image
-          </label>
-          <input
-            id="upload-input"
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              setFileWithPreview(e.target.files?.[0] ?? null);
-              setDemoSlug(null);
-            }}
-            className="text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-          />
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="url">Source URL (optional)</Label>
-              <Input
-                id="url"
-                placeholder="https://t.me/..."
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
+    <main className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
+      <TopBar
+        caseId={ctx.caseId}
+        handling={ctx.handling}
+        analystName={analystName}
+        status={ctx.status}
+        onDownloadJson={downloadJson}
+        onExportPdf={exportPdf}
+        busy={loading}
+      />
+      <div className="flex flex-1 overflow-hidden">
+        <LeftNav
+          active={activePanel}
+          onSelect={setActivePanel}
+          badges={{
+            provenance: byTier(1).length,
+            forensics: byTier(2).length + byTier(3).length,
+            osint: byTier(4).length,
+            hypotheses: hypotheses.length,
+            tensions: tensions.length,
+            gaps: gaps.length,
+            claims: intake.claimText.trim() ? 1 : 0,
+          }}
+        />
+        <section className="flex-1 overflow-y-auto p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-mono text-[11px] uppercase tracking-widest text-slate-400">
+              {panelTitle(activePanel)}
+            </h2>
+            <div className="flex items-center gap-2">
+              <input
+                value={analystName ?? ""}
+                onChange={(e) => setAnalystName(e.target.value || null)}
+                placeholder="Analyst name"
+                className="rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-600"
               />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="query">Claim query (optional)</Label>
-              <Input
-                id="query"
-                placeholder="What is being claimed?"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+              <button
+                type="button"
+                onClick={resetCase}
+                className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+              >
+                New case
+              </button>
             </div>
           </div>
-
-          <Button type="submit" disabled={(!file && !url) || loading}>
-            {loading ? "Verifying…" : "Verify"}
-          </Button>
-          <p className="text-xs text-mutedForeground">
-            Provide an uploaded file <em>or</em> a source URL (or both).
-          </p>
-          {demoSlug && (
-            <p className="text-xs text-mutedForeground">
-              Loaded demo asset: <span className="font-mono">{demoSlug}</span>
-            </p>
-          )}
           {error && (
             <p
               role="alert"
-              className="rounded-md border border-danger/40 bg-danger/10 p-2 text-sm text-danger"
+              className="mb-3 rounded border border-red-700/60 bg-red-900/30 p-2 text-sm text-red-200"
             >
               {error}
             </p>
           )}
-        </form>
-
-        <hr className="border-border" />
-
-        <DemoExamples
-          apiBase={API_BASE}
-          onPick={onPickDemo}
-          disabled={loading}
-        />
+          {activePanel === "overview" && <CaseOverviewPanel {...panelProps} />}
+          {activePanel === "media" && <MediaEvidencePanel {...panelProps} />}
+          {activePanel === "provenance" && (
+            <TierPanel tier={1} findings={byTier(1)} onSelect={setSelected} />
+          )}
+          {activePanel === "forensics" && (
+            <div className="flex flex-col gap-4">
+              <TierPanel tier={2} findings={byTier(2)} onSelect={setSelected} />
+              <TierPanel tier={3} findings={byTier(3)} onSelect={setSelected} />
+            </div>
+          )}
+          {activePanel === "osint" && (
+            <TierPanel tier={4} findings={byTier(4)} onSelect={setSelected} />
+          )}
+          {activePanel === "source-network" && (
+            <SourceNetworkPanel {...panelProps} />
+          )}
+          {activePanel === "timeline" && <TimelinePanel {...panelProps} />}
+          {activePanel === "hypotheses" && <HypothesesPanel {...panelProps} />}
+          {activePanel === "tensions" && <TensionsPanel {...panelProps} />}
+          {activePanel === "gaps" && <GapsPanel {...panelProps} />}
+          {activePanel === "claims" && <ClaimsPanel {...panelProps} />}
+          {activePanel === "notes" && <NotesPanel {...panelProps} />}
+          {activePanel === "assessment" && <AssessmentPanel {...panelProps} />}
+        </section>
+        <RightInspector finding={selected} onClear={() => setSelected(null)} />
       </div>
-
-      {loading && <ReportSkeleton />}
-      {report && !loading && (
-        <ReportView report={report} preview={preview} demoSlug={demoSlug} />
-      )}
-
-      <footer className="mt-8 border-t border-border pt-4 text-xs text-mutedForeground">
-        Built for HackTM 2026 in collaboration with the NATO HUMINT Centre of
-        Excellence. Open source.
-      </footer>
     </main>
   );
+}
+
+function panelTitle(id: PanelId): string {
+  return {
+    overview: "Case Overview",
+    media: "Media Evidence",
+    provenance: "Provenance · Tier 1",
+    forensics: "Forensics · Tier 2 + Tier 3",
+    osint: "OSINT Corroboration · Tier 4",
+    "source-network": "Source Network",
+    timeline: "Timeline Reconstruction",
+    hypotheses: "Hypothesis Matrix",
+    tensions: "Analytic Tensions",
+    gaps: "Collection Gaps",
+    claims: "Claim Ledger",
+    notes: "Analyst Notes",
+    assessment: "Final Assessment Builder",
+  }[id];
 }
