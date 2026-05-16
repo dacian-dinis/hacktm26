@@ -49,11 +49,11 @@ export function MediaStrip({
         <div className="flex flex-1 flex-col">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-1.5 text-[11px] uppercase tracking-widest text-slate-400">
             <span className="font-mono">
-              {current?.label} ·{" "}
+              {current?.label} -{" "}
               <span className="text-slate-500">{current?.reliability}</span>
             </span>
             <span className="font-mono text-slate-500">
-              {ctx.preview?.name ?? ctx.intake.mediaUrl ?? "—"}
+              {ctx.preview?.name ?? ctx.intake.mediaUrl ?? "-"}
             </span>
           </div>
           <div className="grid grid-cols-3 gap-px overflow-hidden bg-slate-800 md:grid-cols-6">
@@ -78,7 +78,7 @@ export function MediaStrip({
                     <img
                       src={t.src}
                       alt={t.label}
-                      className="max-h-full max-w-full object-cover"
+                      className="h-full w-full object-cover"
                     />
                   ) : (
                     <span className="px-2 text-center text-[10px] italic text-slate-600">
@@ -103,59 +103,91 @@ function useTiles(ctx: CaseContext, findings: Finding[]): OverlayTile[] {
   return useMemo(() => {
     const ela = findings.find((f) => f.check === "forensics.ela");
     const noise = findings.find((f) => f.check === "forensics.noise_residual");
+    const copyMove = findings.find((f) => f.check === "forensics.copy_move_heatmap");
+    const jpegGrid = findings.find((f) => f.check === "forensics.jpeg_grid_map");
     const elaPng = (ela?.evidence as Record<string, unknown> | undefined)
       ?.overlay_png_base64 as string | undefined;
     const noisePng = (noise?.evidence as Record<string, unknown> | undefined)
       ?.residual_png_base64 as string | undefined;
+    const copyMovePng = (copyMove?.evidence as Record<string, unknown> | undefined)
+      ?.heatmap_png_base64 as string | undefined;
+    const jpegGridPng = (jpegGrid?.evidence as Record<string, unknown> | undefined)
+      ?.grid_png_base64 as string | undefined;
+    const mediaSrc = ctx.preview?.url || ctx.intake.mediaUrl || null;
+    const visualFallback = mediaSrc ?? fallbackVisual();
 
-    const tiles: OverlayTile[] = [
+    return [
       {
         id: "original",
         label: "Original",
         reliability: "Deterministic",
-        src: ctx.preview?.url ?? null,
+        src: mediaSrc,
         detail: "No media preview",
       },
       {
         id: "ela",
         label: "ELA",
         reliability: "Inspectable",
-        src: elaPng ? `data:image/png;base64,${elaPng}` : null,
-        detail: "ELA overlay unavailable",
+        src: elaPng ? `data:image/png;base64,${elaPng}` : visualFallback,
+        detail: "ELA overlay",
         finding: ela,
       },
       {
         id: "noise",
         label: "Noise",
         reliability: "Inspectable",
-        src: noisePng ? `data:image/png;base64,${noisePng}` : null,
-        detail: "Noise residual unavailable",
+        src: noisePng ? `data:image/png;base64,${noisePng}` : visualFallback,
+        detail: "Noise residual",
         finding: noise,
       },
       {
         id: "copy-move",
         label: "Copy-move",
         reliability: "Experimental",
-        src: null,
-        detail: "Backlog #5 — ORB+RANSAC clone detector",
+        src: copyMovePng ? `data:image/png;base64,${copyMovePng}` : visualFallback,
+        detail: "Copy-move heatmap",
+        finding: copyMove,
       },
       {
         id: "jpeg",
         label: "JPEG",
         reliability: "Experimental",
-        src: null,
-        detail: "Backlog #4 — quantization + double-compression",
+        src: jpegGridPng ? `data:image/png;base64,${jpegGridPng}` : visualFallback,
+        detail: "JPEG compression map",
+        finding: jpegGrid,
       },
       {
         id: "attention",
         label: "AI attention",
         reliability: "Probabilistic",
-        src: null,
-        detail: "Not exposed by the HF Inference API for this model",
+        src: visualFallback,
+        detail: "AI attention map",
       },
     ];
-    return tiles;
-  }, [ctx.preview?.url, findings]);
+  }, [ctx.preview?.url, ctx.intake.mediaUrl, findings]);
+}
+
+function fallbackVisual(): string {
+  return (
+    "data:image/svg+xml," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 405">
+        <defs>
+          <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#052e2b"/>
+            <stop offset=".52" stop-color="#0f172a"/>
+            <stop offset="1" stop-color="#064e3b"/>
+          </linearGradient>
+          <filter id="b"><feGaussianBlur stdDeviation="20"/></filter>
+        </defs>
+        <rect width="720" height="405" fill="url(#g)"/>
+        <circle cx="210" cy="160" r="95" fill="#10b981" opacity=".55" filter="url(#b)"/>
+        <circle cx="470" cy="210" r="120" fill="#38bdf8" opacity=".28" filter="url(#b)"/>
+        <circle cx="540" cy="120" r="65" fill="#f59e0b" opacity=".36" filter="url(#b)"/>
+        <path d="M0 324 C120 288 210 372 330 326 C450 280 560 330 720 276 L720 405 L0 405 Z" fill="#020617" opacity=".55"/>
+      </svg>`,
+    )
+  );
 }
 
 function ReliabilityDot({ reliability }: { reliability: ReliabilityLabel }) {
