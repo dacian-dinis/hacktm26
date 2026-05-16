@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CaseIntake } from "@/components/case/CaseIntake";
 import { TopBar } from "@/components/case/TopBar";
 import { LeftNav } from "@/components/case/LeftNav";
+import { MediaStrip } from "@/components/case/MediaStrip";
 import { RightInspector } from "@/components/case/RightInspector";
 import {
   AssessmentPanel,
@@ -23,6 +24,7 @@ import { deriveCaseId } from "@/lib/case/caseId";
 import {
   deriveGaps,
   deriveHypotheses,
+  deriveSubClaims,
   deriveTensions,
   deriveTimeline,
 } from "@/lib/case/derive";
@@ -145,6 +147,7 @@ export default function Home() {
     [findings, intake, ctx.createdAt, report?.signed_at],
   );
   const tensions = useMemo(() => deriveTensions(findings, intake), [findings, intake]);
+  const subClaims = useMemo(() => deriveSubClaims(findings, intake), [findings, intake]);
 
   const byTier = (t: 1 | 2 | 3 | 4) => findings.filter((f) => f.tier === t);
 
@@ -232,6 +235,7 @@ export default function Home() {
     timeline,
     tensions,
     gaps,
+    subClaims,
     onSelect: setSelected,
     onExportPdf: exportPdf,
     onDownloadJson: downloadJson,
@@ -249,6 +253,7 @@ export default function Home() {
         onExportPdf={exportPdf}
         busy={loading}
       />
+      <MediaStrip ctx={ctx} findings={findings} onSelect={setSelected} />
       <div className="flex flex-1 overflow-hidden">
         <LeftNav
           active={activePanel}
@@ -260,10 +265,10 @@ export default function Home() {
             hypotheses: hypotheses.length,
             tensions: tensions.length,
             gaps: gaps.length,
-            claims: intake.claimText.trim() ? 1 : 0,
+            claims: subClaims.length,
           }}
         />
-        <section className="flex-1 overflow-y-auto p-4">
+        <section className="flex-1 overflow-y-auto p-3">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-mono text-[11px] uppercase tracking-widest text-slate-400">
               {panelTitle(activePanel)}

@@ -9,6 +9,7 @@ import type {
   CaseContext,
   CollectionGap,
   Hypothesis,
+  SubClaim,
   Tension,
   TimelineEvent,
 } from "@/types/case";
@@ -24,6 +25,7 @@ export interface PanelProps {
   timeline: TimelineEvent[];
   tensions: Tension[];
   gaps: CollectionGap[];
+  subClaims: SubClaim[];
   onSelect: (f: Finding) => void;
   onExportPdf: () => void;
   onDownloadJson: () => void;
@@ -438,46 +440,117 @@ export function GapsPanel({ gaps }: PanelProps) {
 
 // --- Claims --------------------------------------------------------------
 
-export function ClaimsPanel({ ctx }: PanelProps) {
-  // Stub LARP: a single claim row derived from intake.claimText.
-  if (!ctx.intake.claimText.trim())
+const SUBCLAIM_KIND_LABEL: Record<SubClaim["kind"], string> = {
+  subject: "Subject",
+  location: "Location",
+  datetime: "Date / time",
+  source: "Source",
+  not_edited: "Integrity",
+};
+
+export function ClaimsPanel({ subClaims }: PanelProps) {
+  if (subClaims.length === 0)
     return (
       <Placeholder>
-        No claim text supplied. Add it on intake to populate the claim ledger.
+        No claim text or claim metadata supplied. Add at least a claim, claimed
+        location, claimed date/time, or claimed source on intake to populate the
+        ledger.
       </Placeholder>
     );
   return (
     <div className="overflow-x-auto rounded border border-slate-800">
       <table className="w-full text-xs">
-        <thead className="bg-slate-900/80 text-left text-slate-400">
+        <thead className="bg-slate-900/80 text-left font-mono uppercase tracking-widest text-slate-500">
           <tr>
-            <th className="px-3 py-2">Claim</th>
+            <th className="px-3 py-2">Kind</th>
+            <th className="px-3 py-2">Sub-claim</th>
             <th className="px-3 py-2">Supporting</th>
             <th className="px-3 py-2">Contradicting</th>
             <th className="px-3 py-2">Status</th>
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t border-slate-800 align-top">
-            <td className="px-3 py-2 text-slate-100">{ctx.intake.claimText}</td>
-            <td className="px-3 py-2 text-slate-500">
-              <em>derived by analyst</em>
-            </td>
-            <td className="px-3 py-2 text-slate-500">
-              <em>derived by analyst</em>
-            </td>
-            <td className="px-3 py-2">
-              <ConfidenceBadge confidence="insufficient" />
-            </td>
-          </tr>
+          {subClaims.map((c, i) => (
+            <tr
+              key={i}
+              className={
+                "border-t border-slate-800 align-top " +
+                (i % 2 === 0 ? "bg-slate-950/30" : "bg-slate-950/10")
+              }
+            >
+              <td className="px-3 py-2 font-mono text-[10.5px] uppercase tracking-widest text-slate-400">
+                {SUBCLAIM_KIND_LABEL[c.kind]}
+              </td>
+              <td className="px-3 py-2">
+                <div className="text-slate-100">{c.text}</div>
+                <p className="mt-1 text-[11px] text-slate-500">{c.rationale}</p>
+              </td>
+              <td className="px-3 py-2">
+                {c.supporting.length === 0 ? (
+                  <span className="text-slate-600">—</span>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {c.supporting.map((r, j) => (
+                      <li key={j} className="text-slate-200">
+                        <span className="font-mono text-[10.5px] text-slate-400">
+                          {r.check}
+                        </span>{" "}
+                        — {r.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </td>
+              <td className="px-3 py-2">
+                {c.contradicting.length === 0 ? (
+                  <span className="text-slate-600">—</span>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {c.contradicting.map((r, j) => (
+                      <li key={j} className="text-slate-200">
+                        <span className="font-mono text-[10.5px] text-slate-400">
+                          {r.check}
+                        </span>{" "}
+                        — {r.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </td>
+              <td className="px-3 py-2">
+                <SubClaimStatusBadge status={c.status} />
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
-      <p className="border-t border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500">
-        Auto-extraction of sub-claims (location / time / source / &ldquo;no
-        edit&rdquo;) is on the backlog. For demo, run hypotheses + tensions to
-        evaluate the single submitted claim.
+      <p className="border-t border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] italic text-slate-500">
+        Sub-claims are auto-extracted from intake. Each is evaluated
+        independently against the tier findings — a single &ldquo;true / false&rdquo; label is
+        rarely the right shape for media claims.
       </p>
     </div>
+  );
+}
+
+function SubClaimStatusBadge({ status }: { status: SubClaim["status"] }) {
+  const cls =
+    status === "supported"
+      ? "bg-emerald-600/30 text-emerald-200 border-emerald-600/60"
+      : status === "contradicted"
+        ? "bg-red-700/30 text-red-200 border-red-600/60"
+        : status === "unresolved"
+          ? "bg-amber-700/30 text-amber-200 border-amber-600/60"
+          : "bg-slate-800/40 text-slate-400 border-slate-700";
+  return (
+    <span
+      className={
+        "inline-block rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest " +
+        cls
+      }
+    >
+      {status}
+    </span>
   );
 }
 
@@ -608,11 +681,14 @@ function suggestStatus(hypotheses: Hypothesis[], tensions: Tension[]) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded border border-slate-800 bg-slate-950/60 p-3">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-slate-400">
-        {title}
-      </h3>
-      {children}
+    <section className="border border-slate-800 bg-slate-950/60">
+      <header className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-2.5 py-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+        <h3 className="font-mono text-[10.5px] uppercase tracking-widest text-slate-400">
+          {title}
+        </h3>
+      </header>
+      <div className="p-2.5">{children}</div>
     </section>
   );
 }
@@ -678,8 +754,25 @@ function ResultChip({ r }: { r: "pass" | "fail" | "indeterminate" }) {
 }
 
 function ReliabilityChip({ label }: { label: string }) {
+  const tone =
+    label === "Deterministic"
+      ? "border-emerald-600/60 bg-emerald-700/20 text-emerald-200"
+      : label === "Inspectable"
+        ? "border-sky-600/60 bg-sky-700/20 text-sky-200"
+        : label === "Probabilistic"
+          ? "border-amber-600/60 bg-amber-700/20 text-amber-200"
+          : label === "External-source dependent"
+            ? "border-violet-600/60 bg-violet-700/20 text-violet-200"
+            : label === "Missing input"
+              ? "border-red-600/60 bg-red-700/20 text-red-200"
+              : "border-slate-700 text-slate-400";
   return (
-    <span className="rounded border border-slate-700 px-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-400">
+    <span
+      className={
+        "rounded border px-1.5 font-mono text-[10px] uppercase tracking-widest " +
+        tone
+      }
+    >
       {label}
     </span>
   );

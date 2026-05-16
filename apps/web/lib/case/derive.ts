@@ -5,7 +5,9 @@
 import type {
   CaseIntake,
   CollectionGap,
+  FindingRef,
   Hypothesis,
+  SubClaim,
   Tension,
   TimelineEvent,
 } from "@/types/case";
@@ -549,4 +551,229 @@ function scoreConfidence(supports: number, contras: number) {
   if (net >= 1) return "moderate" as const;
   if (net === 0) return "low" as const;
   return "insufficient" as const;
+}
+
+// --- sub-claim auto-extraction --------------------------------------------
+// Decompose the freeform `claimText` plus the structured intake fields into
+// a small set of testable sub-claims, then evaluate each against the
+// findings. This is the "claim ledger" view: a single claim is rarely a
+// single proposition — it bundles subject + location + time + source +
+// integrity. Each can be supported or contradicted independently.
+
+export function deriveSubClaims(
+  findings: Finding[],
+  intake: CaseIntake,
+): SubClaim[] {
+  const claimText = intake.claimText.trim();
+  if (!claimText && !intake.claimedLocation && !intake.claimedDateTime && !intake.claimedSource)
+    return [];
+
+  const out: SubClaim[] = [];
+
+  const reverse = byCheck(findings, "reverse_image.lookup");
+  const reverseHits = ev<number>(reverse, "hit_count") ?? 0;
+  const earliestStr = ev<string>(reverse, "earliest_seen");
+  const earliest = safeDate(earliestStr ?? null);
+  const factcheck = byCheck(findings, "google.factcheck.search");
+  const factRating = ev<string>(factcheck, "rating");
+  const factClaim = ev<string>(factcheck, "claim");
+  const sourceRep = byCheck(findings, "source.reputation");
+  const telegram = byCheck(findings, "telegram.reputation");
+  const ela = byCheck(findings, "forensics.ela");
+  const noise = byCheck(findings, "forensics.noise_residual");
+  const c2pa = byCheck(findings, "c2pa.signature.verify");
+  const c2paPass = c2pa?.result === "pass";
+
+  // 1. Subject — "this image shows X" — extracted from claimText
+  if (claimText) {
+    const support: FindingRef[] = [];
+    const contra: FindingRef[] = [];
+    if (factClaim && factRating && /support|true|correct|accurate/i.test(factRating))
+      support.push({
+        check: "google.factcheck.search",
+        reason: `External fact-check supports a similar claim: "${factClaim}".`,
+      });
+    if (factRating && /mislead|false|fake|incorrect|outdated/i.test(factRating))
+      contra.push({
+        check: "google.factcheck.search",
+        reason: `External fact-check rated this subject "${factRating}".`,
+      });
+    if (reverseHits > 0 && earliest)
+      contra.push({
+        check: "reverse_image.lookup",
+        reason: `Image was already on the web at ${earliest.toISOString().slice(0, 10)}; subject framing may not be the original one.`,
+      });
+    out.push({
+      kind: "subject",
+      text: `This image shows: ${claimText}`,
+      supporting: support,
+      contradicting: contra,
+      status: deriveStatus(support, contra),
+      rationale:
+        contra.length > 0
+          ? "Subject framing is challenged by external corroboration and/or temporal evidence."
+          : support.length > 0
+            ? "Subject framing matches a corroborated external claim."
+            : "No external evidence pro or con the subject framing.",
+    });
+  }
+
+  // 2. Location — "it happened in Y"
+  if (intake.claimedLocation.trim()) {
+    const support: FindingRef[] = [];
+    const contra: FindingRef[] = [];
+    // No backend geolocation check yet — flag as unresolved with the gap
+    out.push({
+      kind: "location",
+      text: `Claimed location: ${intake.claimedLocation}`,
+      supporting: support,
+      contradicting: contra,
+      status: "insufficient",
+      rationale:
+        "No geolocation evidence in this workbench yet (shadow / EXIF GPS / scene-matching backlog). Treat as an open lead for the analyst.",
+    });
+  }
+
+  // 3. Date / time — "it happened on Z"
+  if (intake.claimedDateTime.trim()) {
+    const support: FindingRef[] = [];
+    const contra: FindingRef[] = [];
+    const claimed = safeDate(intake.claimedDateTime);
+    if (claimed && earliest) {
+      const diffYears =
+        (claimed.getTime() - earliest.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+      if (diffYears > 1)
+        contra.push({
+          check: "reverse_image.lookup",
+          reason: `Visual base online since ${earliest.toISOString().slice(0, 10)} — predates claimed date by ~${diffYears.toFixed(0)} year(s).`,
+        });
+      else if (Math.abs(diffYears) < 0.1)
+        support.push({
+          check: "reverse_image.lookup",
+          reason: "Earliest sighting and claimed date are within a month of each other.",
+        });
+    }
+    // C2PA signing time
+    const c2paSig = ev<Record<string, unknown> | null>(c2pa, "signer");
+    const c2paTime = c2paSig && (c2paSig as Record<string, unknown>).time;
+    const c2paDt = typeof c2paTime === "string" ? safeDate(c2paTime) : null;
+    if (claimed && c2paDt) {
+      const diffDays = Math.abs(
+        (claimed.getTime() - c2paDt.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      if (diffDays < 30)
+        support.push({
+          check: "c2pa.signature.verify",
+          reason: `C2PA signature time (${c2paDt.toISOString().slice(0, 10)}) is within ${diffDays.toFixed(0)} day(s) of claimed date.`,
+        });
+      else
+        contra.push({
+          check: "c2pa.signature.verify",
+          reason: `C2PA signature time (${c2paDt.toISOString().slice(0, 10)}) is ${diffDays.toFixed(0)} day(s) off the claimed date.`,
+        });
+    }
+    out.push({
+      kind: "datetime",
+      text: `Claimed date / time: ${intake.claimedDateTime}`,
+      supporting: support,
+      contradicting: contra,
+      status: deriveStatus(support, contra),
+      rationale:
+        contra.length > 0
+          ? "Temporal evidence contradicts the claimed date."
+          : support.length > 0
+            ? "Temporal evidence is consistent with the claimed date."
+            : "No temporal evidence to evaluate this sub-claim.",
+    });
+  }
+
+  // 4. Source — "it came from S"
+  if (intake.claimedSource.trim() || intake.sourceUrl.trim()) {
+    const support: FindingRef[] = [];
+    const contra: FindingRef[] = [];
+    if (sourceRep && sourceRep.result === "pass")
+      support.push({
+        check: "source.reputation",
+        reason: "Source domain is in the trusted set.",
+      });
+    if (sourceRep && sourceRep.result === "fail")
+      contra.push({
+        check: "source.reputation",
+        reason: "Source domain is in the known-disinformation set.",
+      });
+    if (telegram && telegram.result === "fail")
+      contra.push({
+        check: "telegram.reputation",
+        reason: "Telegram handle flagged in the curated disinfo list.",
+      });
+    if (c2paPass)
+      support.push({
+        check: "c2pa.signature.verify",
+        reason: "Cryptographically signed by a named issuer.",
+      });
+    out.push({
+      kind: "source",
+      text: `Source: ${intake.claimedSource || intake.sourceUrl}`,
+      supporting: support,
+      contradicting: contra,
+      status: deriveStatus(support, contra),
+      rationale:
+        contra.length > 0
+          ? "Source attribution is contradicted by reputation or provenance signals."
+          : support.length > 0
+            ? "Source attribution corroborated by reputation or provenance signals."
+            : "No source-reputation evidence — analyst must validate the source manually.",
+    });
+  }
+
+  // 5. Integrity — "the media has not been edited"
+  {
+    const support: FindingRef[] = [];
+    const contra: FindingRef[] = [];
+    if (c2paPass)
+      support.push({
+        check: "c2pa.signature.verify",
+        reason: "C2PA signature would be invalidated by any post-signing edit.",
+      });
+    if (!isElaElevated(ela) && !isNoiseInconsistent(noise))
+      support.push({
+        check: "forensics.*",
+        reason: "ELA and noise residual both within baseline.",
+      });
+    if (isElaElevated(ela))
+      contra.push({
+        check: "forensics.ela",
+        reason: "Localized recompression anomalies present.",
+      });
+    if (isNoiseInconsistent(noise))
+      contra.push({
+        check: "forensics.noise_residual",
+        reason: "Inconsistent residual texture across regions.",
+      });
+    out.push({
+      kind: "not_edited",
+      text: "The media has not been edited",
+      supporting: support,
+      contradicting: contra,
+      status: deriveStatus(support, contra),
+      rationale:
+        contra.length > 0
+          ? "Pixel-level signals are inconsistent with an unedited image."
+          : support.length > 0
+            ? "Pixel-level signals are consistent with an unedited image."
+            : "Insufficient forensic signal to evaluate integrity.",
+    });
+  }
+
+  return out;
+}
+
+function deriveStatus(
+  supporting: FindingRef[],
+  contradicting: FindingRef[],
+): SubClaim["status"] {
+  if (supporting.length === 0 && contradicting.length === 0) return "insufficient";
+  if (contradicting.length > supporting.length) return "contradicted";
+  if (supporting.length > contradicting.length) return "supported";
+  return "unresolved";
 }

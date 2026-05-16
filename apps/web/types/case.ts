@@ -111,6 +111,28 @@ export type AssessmentStatus =
   | "unverifiable"
   | "escalate";
 
+export type SubClaimStatus =
+  | "supported"
+  | "contradicted"
+  | "unresolved"
+  | "insufficient";
+
+export type SubClaimKind =
+  | "subject"
+  | "location"
+  | "datetime"
+  | "source"
+  | "not_edited";
+
+export interface SubClaim {
+  kind: SubClaimKind;
+  text: string;
+  supporting: FindingRef[];
+  contradicting: FindingRef[];
+  status: SubClaimStatus;
+  rationale: string;
+}
+
 export interface CaseContext {
   caseId: string;
   handling: string;
