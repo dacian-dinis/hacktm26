@@ -6,9 +6,17 @@
 
 import { useState } from "react";
 import type {
+  AssessmentMemo,
   CaseContext,
+  ChainEvent,
   CollectionGap,
+  DeceptionIndicator,
+  EntityEdge,
+  EntityNode,
   Hypothesis,
+  PlanTask,
+  SecurityControl,
+  SourceDossier,
   StrengthAxis,
   StrengthLevel,
   StrengthScore,
@@ -30,6 +38,13 @@ export interface PanelProps {
   gaps: CollectionGap[];
   subClaims: SubClaim[];
   strength: StrengthScore;
+  deception: DeceptionIndicator[];
+  custody: ChainEvent[];
+  entities: { nodes: EntityNode[]; edges: EntityEdge[] };
+  dossier: SourceDossier | null;
+  plan: PlanTask[];
+  security: SecurityControl[];
+  memo: AssessmentMemo;
   onSelect: (f: Finding) => void;
   onExportPdf: () => void;
   onDownloadJson: () => void;
@@ -212,67 +227,72 @@ export function TierPanel({
   );
 }
 
-// --- Source Network ------------------------------------------------------
+// --- Source Dossier -----------------------------------------------------
 
-export function SourceNetworkPanel({ findings, ctx }: PanelProps) {
-  const reverse = findings.find((f) => f.check === "reverse_image.lookup");
-  const hits =
-    (reverse?.evidence as Record<string, unknown> | undefined)?.hits as
-      | { url?: string; name?: string; host?: string; datePublished?: string }[]
-      | undefined;
+export function SourceNetworkPanel({ findings, ctx, dossier }: PanelProps) {
+  if (!dossier)
+    return (
+      <Placeholder>
+        No source supplied. Add a source URL or claimed source on intake to
+        populate the dossier.
+      </Placeholder>
+    );
   const sourceRep = findings.find((f) => f.check === "source.reputation");
   const telegram = findings.find((f) => f.check === "telegram.reputation");
   return (
-    <div className="flex flex-col gap-4">
-      <Card title="Submitted media">
-        <KV k="sha256" v={ctx.report?.input_hash ?? "—"} mono />
-        <KV k="Claimed source" v={ctx.intake.claimedSource || "—"} />
-        <KV k="Source URL" v={ctx.intake.sourceUrl || "—"} />
+    <div className="flex flex-col gap-3">
+      <Card title={`Identity · ${dossier.identity}`}>
+        <KV k="Type" v={dossier.type.replace(/_/g, " ")} mono />
+        <div className="mt-2 flex flex-wrap gap-1">
+          {dossier.labels.map((l) => (
+            <span
+              key={l}
+              className="rounded border border-slate-700 bg-slate-900/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-slate-300"
+            >
+              {l}
+            </span>
+          ))}
+        </div>
       </Card>
-      <Card title="Same-image visual matches">
-        {hits && hits.length > 0 ? (
-          <table className="w-full text-xs">
-            <thead className="text-left text-slate-500">
-              <tr>
-                <th className="py-1">Host</th>
-                <th className="py-1">Name</th>
-                <th className="py-1">Published</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hits.map((h, i) => (
-                <tr key={i} className="border-t border-slate-800">
-                  <td className="py-1 font-mono text-slate-300">{h.host ?? "—"}</td>
-                  <td className="py-1">
-                    {h.url ? (
-                      <a
-                        href={h.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-400 underline"
-                      >
-                        {h.name ?? h.url}
-                      </a>
-                    ) : (
-                      h.name ?? "—"
-                    )}
-                  </td>
-                  <td className="py-1 font-mono text-slate-400">
-                    {h.datePublished ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <Card title="Reliability history">
+        <p className="text-xs text-slate-200">{dossier.reliabilityHistory}</p>
+      </Card>
+      <Card title="Amplification behavior">
+        <p className="text-xs text-slate-200">{dossier.amplificationBehavior}</p>
+      </Card>
+      <Card title="Linked entities">
+        {dossier.linkedEntities.length === 0 ? (
+          <Placeholder>None recorded yet.</Placeholder>
         ) : (
-          <Placeholder>No visual matches.</Placeholder>
+          <ul className="space-y-0.5 text-xs">
+            {dossier.linkedEntities.map((e, i) => (
+              <li key={i} className="text-slate-200">
+                · {e}
+              </li>
+            ))}
+          </ul>
         )}
       </Card>
-      <Card title="Domain reputation">
-        {sourceRep ? <FindingRow finding={sourceRep} /> : <Placeholder>No URL supplied — no domain reputation lookup.</Placeholder>}
+      <Card title="Caveats">
+        {dossier.caveats.length === 0 ? (
+          <Placeholder>No caveats recorded.</Placeholder>
+        ) : (
+          <ul className="space-y-0.5 text-xs">
+            {dossier.caveats.map((c, i) => (
+              <li key={i} className="text-amber-200">
+                ⚠ {c}
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
-      <Card title="Telegram reputation">
-        {telegram ? <FindingRow finding={telegram} /> : <Placeholder>Not a Telegram URL.</Placeholder>}
+      <Card title="Backing tier-4 findings">
+        {sourceRep ? <FindingRow finding={sourceRep} /> : <Placeholder>No source-reputation finding for this case.</Placeholder>}
+        {telegram && (
+          <div className="mt-2">
+            <FindingRow finding={telegram} />
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -427,28 +447,114 @@ export function TensionsPanel({ tensions }: PanelProps) {
   );
 }
 
-// --- Gaps ----------------------------------------------------------------
+// --- Collection Plan ----------------------------------------------------
 
-export function GapsPanel({ gaps }: PanelProps) {
-  if (gaps.length === 0)
+export function GapsPanel({ gaps, plan }: PanelProps) {
+  if (gaps.length === 0 && plan.length === 0)
     return <Placeholder>No collection gaps detected.</Placeholder>;
   return (
-    <ul className="flex flex-col gap-2">
-      {gaps.map((g) => (
-        <li
-          key={g.id}
-          className="rounded border border-slate-700 bg-slate-900/40 p-3"
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[10.5px] uppercase tracking-widest text-amber-400">
-              missing
-            </span>
-            <span className="text-sm text-slate-100">{g.label}</span>
-          </div>
-          <p className="mt-1 text-xs text-slate-400">{g.impact}</p>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      <Card title={`Open tasks (${plan.length})`}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-900/80 text-left font-mono uppercase tracking-widest text-slate-500">
+              <tr>
+                <th className="px-2 py-1.5">ID</th>
+                <th className="px-2 py-1.5">Task</th>
+                <th className="px-2 py-1.5">Hypothesis</th>
+                <th className="px-2 py-1.5">Priority</th>
+                <th className="px-2 py-1.5">Owner</th>
+                <th className="px-2 py-1.5">Status</th>
+                <th className="px-2 py-1.5">Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.map((t, i) => (
+                <tr
+                  key={t.id}
+                  className={
+                    "border-t border-slate-800 align-top " +
+                    (i % 2 === 0 ? "bg-slate-950/30" : "bg-slate-950/10")
+                  }
+                >
+                  <td className="px-2 py-1.5 font-mono text-slate-400">{t.id}</td>
+                  <td className="px-2 py-1.5 text-slate-100">{t.title}</td>
+                  <td className="px-2 py-1.5 font-mono text-[10.5px] text-slate-400">
+                    {t.affectedHypothesis}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <PriorityChip p={t.priority} />
+                  </td>
+                  <td className="px-2 py-1.5 text-slate-300">{t.owner}</td>
+                  <td className="px-2 py-1.5">
+                    <StatusChip s={t.status} />
+                  </td>
+                  <td className="px-2 py-1.5 font-mono text-slate-400">{t.due}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card title="Underlying gaps">
+        <ul className="flex flex-col gap-2">
+          {gaps.map((g) => (
+            <li
+              key={g.id}
+              className="border-l-2 border-amber-500/60 bg-slate-950/40 pl-3"
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[10.5px] uppercase tracking-widest text-amber-400">
+                  missing
+                </span>
+                <span className="text-sm text-slate-100">{g.label}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">{g.impact}</p>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
+function PriorityChip({ p }: { p: PlanTask["priority"] }) {
+  const cls =
+    p === "high"
+      ? "bg-red-700/30 text-red-200 border-red-600/60"
+      : p === "medium"
+        ? "bg-amber-700/30 text-amber-200 border-amber-600/60"
+        : "bg-slate-700/40 text-slate-300 border-slate-600/60";
+  return (
+    <span
+      className={
+        "rounded border px-1.5 font-mono text-[10px] uppercase tracking-widest " +
+        cls
+      }
+    >
+      {p}
+    </span>
+  );
+}
+
+function StatusChip({ s }: { s: PlanTask["status"] }) {
+  const cls =
+    s === "done"
+      ? "bg-emerald-700/30 text-emerald-200 border-emerald-600/60"
+      : s === "in_progress"
+        ? "bg-sky-700/30 text-sky-200 border-sky-600/60"
+        : s === "blocked"
+          ? "bg-red-700/30 text-red-200 border-red-600/60"
+          : "bg-slate-800/40 text-slate-300 border-slate-700";
+  return (
+    <span
+      className={
+        "rounded border px-1.5 font-mono text-[10px] uppercase tracking-widest " +
+        cls
+      }
+    >
+      {s.replace("_", " ")}
+    </span>
   );
 }
 
@@ -595,6 +701,7 @@ export function AssessmentPanel({
   tensions,
   gaps,
   strength,
+  memo,
   onExportPdf,
   onDownloadJson,
   busy,
@@ -610,9 +717,68 @@ export function AssessmentPanel({
   return (
     <div className="flex flex-col gap-3">
       <StrengthBanner strength={strength} />
-      <Card title="Suggested assessment">
+      <Card title="Executive assessment">
+        <p className="text-sm leading-relaxed text-slate-100">{memo.executive}</p>
+      </Card>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Card title="Key supporting evidence">
+          {memo.keySupporting.length === 0 ? (
+            <Placeholder>None recorded.</Placeholder>
+          ) : (
+            <ul className="space-y-1 text-xs text-slate-200">
+              {memo.keySupporting.map((s, i) => (
+                <li key={i}>· {s}</li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card title="Key contradicting evidence">
+          {memo.keyContradicting.length === 0 ? (
+            <Placeholder>None recorded.</Placeholder>
+          ) : (
+            <ul className="space-y-1 text-xs text-slate-200">
+              {memo.keyContradicting.map((s, i) => (
+                <li key={i}>· {s}</li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card title="Active deception indicators">
+          {memo.deception.length === 0 ? (
+            <Placeholder>None active.</Placeholder>
+          ) : (
+            <ul className="space-y-1 text-xs text-amber-200">
+              {memo.deception.map((s, i) => (
+                <li key={i}>⚑ {s}</li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card title="Collection gaps">
+          {memo.collectionGaps.length === 0 ? (
+            <Placeholder>No gaps.</Placeholder>
+          ) : (
+            <ul className="space-y-1 text-xs text-slate-200">
+              {memo.collectionGaps.map((s, i) => (
+                <li key={i}>· {s}</li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card title="Method limitations">
+          <ul className="space-y-1 text-xs text-slate-400">
+            {memo.methodLimitations.map((s, i) => (
+              <li key={i}>· {s}</li>
+            ))}
+          </ul>
+        </Card>
+        <Card title="Security / custody note">
+          <p className="text-xs text-slate-300">{memo.securityNote}</p>
+        </Card>
+      </div>
+      <Card title="Suggested status">
         <p className="text-sm text-slate-100">
-          Status: <span className="font-mono">{status}</span>
+          <span className="font-mono">{status}</span>
         </p>
         <p className="mt-1 text-xs text-slate-400">
           Strongest hypothesis: <span className="font-mono">{top?.id ?? "—"}</span>{" "}
@@ -922,4 +1088,341 @@ function strengthBorder(level: StrengthLevel): string {
   if (level === "partial") return "border-sky-500";
   if (level === "limited") return "border-amber-500";
   return "border-red-500";
+}
+
+// --- Entity Graph (Screen 5) --------------------------------------------
+
+const ENTITY_TYPE_LABEL: Record<EntityNode["type"], string> = {
+  media: "MEDIA",
+  visual_match: "VISUAL MATCH",
+  source_domain: "DOMAIN",
+  telegram_channel: "TELEGRAM",
+  fact_check: "FACT-CHECK",
+  claimed_source: "CLAIMED SRC",
+  claimed_location: "LOCATION",
+  publisher: "PUBLISHER",
+};
+
+const EDGE_LABEL: Record<EntityEdge["type"], string> = {
+  published: "published",
+  visually_matches: "visually matches",
+  reposted: "reposted",
+  reviews: "reviews",
+  located_in: "located in",
+  claims_same_event: "claims same event",
+};
+
+export function EntityGraphPanel({ entities }: PanelProps) {
+  const { nodes, edges } = entities;
+  if (nodes.length <= 1)
+    return (
+      <Placeholder>
+        Only the submitted media is in the graph. Add a source URL, claimed
+        location, or run reverse-image to extract more entities.
+      </Placeholder>
+    );
+  return (
+    <div className="flex flex-col gap-3">
+      <Card title={`Nodes (${nodes.length})`}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-left font-mono uppercase tracking-widest text-slate-500">
+              <tr>
+                <th className="py-1 pr-3">Type</th>
+                <th className="py-1 pr-3">Label</th>
+                <th className="py-1 pr-3">Caveat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nodes.map((n) => (
+                <tr key={n.id} className="border-t border-slate-800">
+                  <td className="py-1 pr-3 font-mono text-[10.5px] text-slate-400">
+                    {ENTITY_TYPE_LABEL[n.type]}
+                  </td>
+                  <td className="py-1 pr-3 text-slate-100">{n.label}</td>
+                  <td className="py-1 pr-3 text-amber-200">{n.caveat ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card title={`Edges (${edges.length})`}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-left font-mono uppercase tracking-widest text-slate-500">
+              <tr>
+                <th className="py-1 pr-3">From</th>
+                <th className="py-1 pr-3">Relation</th>
+                <th className="py-1 pr-3">To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {edges.map((e, i) => {
+                const fromNode = nodes.find((n) => n.id === e.from);
+                const toNode = nodes.find((n) => n.id === e.to);
+                return (
+                  <tr key={i} className="border-t border-slate-800">
+                    <td className="py-1 pr-3 font-mono text-slate-300">
+                      {fromNode?.label ?? e.from}
+                    </td>
+                    <td className="py-1 pr-3 font-mono text-emerald-300">
+                      {EDGE_LABEL[e.type]}
+                    </td>
+                    <td className="py-1 pr-3 font-mono text-slate-300">
+                      {toNode?.label ?? e.to}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <p className="text-[11px] italic text-slate-500">
+        Initial implementation is a table. Visual graph layout (D3 / cytoscape)
+        is on the backlog; the conceptual model is the value.
+      </p>
+    </div>
+  );
+}
+
+// --- Geo / Chrono Workbench (Screen 8) ----------------------------------
+
+export function GeoChronoPanel({ ctx }: PanelProps) {
+  const claimed = ctx.intake.claimedLocation.trim();
+  const dt = ctx.intake.claimedDateTime.trim();
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <Card title="Analyst inputs">
+        <KV k="Claimed location" v={claimed || "—"} />
+        <KV k="Claimed date / time" v={dt || "—"} />
+        <KV k="Shadow direction" v="(analyst entry)" />
+        <KV k="Landmarks" v="(analyst entry)" />
+        <KV k="Weather clue" v="(analyst entry)" />
+        <KV k="Language / signage" v="(analyst entry)" />
+        <KV k="Vehicle / plate clue" v="(analyst entry)" />
+        <KV k="Terrain / architecture" v="(analyst entry)" />
+      </Card>
+      <Card title="Geolocation candidates">
+        <Placeholder>
+          No geolocation backend wired. Bellingcat-style shadow / landmark
+          analysis is on the backlog (Workbench UI §Screen 8).
+        </Placeholder>
+      </Card>
+      <Card title="Chronolocation constraints">
+        {dt ? (
+          <p className="text-xs text-slate-200">
+            Claimed time: <span className="font-mono">{dt}</span>. Sun-position
+            consistency check would run here if shadow direction were supplied.
+          </p>
+        ) : (
+          <Placeholder>No claimed date/time supplied.</Placeholder>
+        )}
+      </Card>
+      <Card title="Verdict">
+        <ul className="flex flex-col gap-1 text-xs">
+          <li>
+            <Status label="Sun-position" status="Unresolved" />
+          </li>
+          <li>
+            <Status label="Weather" status="Unresolved" />
+          </li>
+          <li>
+            <Status label="Landmark refs" status="Unresolved" />
+          </li>
+          <li>
+            <Status label="Overall" status="Needs analyst review" />
+          </li>
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
+function Status({ label, status }: { label: string; status: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="font-mono uppercase tracking-widest text-slate-500">
+        {label}
+      </span>
+      <span className="rounded border border-slate-700 bg-slate-900/60 px-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-300">
+        {status}
+      </span>
+    </span>
+  );
+}
+
+// --- Deception Indicators (Screen 9) ------------------------------------
+
+export function DeceptionPanel({ deception }: PanelProps) {
+  if (deception.length === 0)
+    return <Placeholder>No indicators evaluated yet.</Placeholder>;
+  return (
+    <ul className="flex flex-col gap-2">
+      {deception.map((d) => (
+        <li
+          key={d.id}
+          className={
+            "border-l-4 bg-slate-950/40 p-3 " +
+            (d.status === "active"
+              ? "border-red-500"
+              : d.status === "absent"
+                ? "border-emerald-600/60"
+                : "border-slate-700")
+          }
+        >
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span
+              className={
+                "rounded border px-1.5 font-mono text-[10px] uppercase tracking-widest " +
+                (d.status === "active"
+                  ? "border-red-600/60 bg-red-700/20 text-red-200"
+                  : d.status === "absent"
+                    ? "border-emerald-600/60 bg-emerald-700/20 text-emerald-200"
+                    : "border-slate-700 text-slate-400")
+              }
+            >
+              {d.status === "active" ? "active" : d.status === "absent" ? "clear" : "n/a"}
+            </span>
+            <span className="text-sm text-slate-100">{d.label}</span>
+            <span className="ml-auto font-mono text-[10.5px] text-slate-500">
+              {d.id}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-300">{d.explanation}</p>
+          <p className="mt-1 font-mono text-[10.5px] text-slate-500">
+            Evidence: {d.evidence.join(" · ")} · affects {d.affectedClaims.join(", ")}
+          </p>
+          <p className="mt-1 text-[11px] italic text-amber-200/80">{d.caveat}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// --- Chain of Custody (Screen 13) ---------------------------------------
+
+export function CustodyPanel({ custody }: PanelProps) {
+  if (custody.length === 0)
+    return <Placeholder>No custody events recorded yet.</Placeholder>;
+  return (
+    <div className="overflow-x-auto rounded border border-slate-800">
+      <table className="w-full text-xs">
+        <thead className="bg-slate-900/80 text-left font-mono uppercase tracking-widest text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Timestamp</th>
+            <th className="px-2 py-1.5">Actor</th>
+            <th className="px-2 py-1.5">Action</th>
+            <th className="px-2 py-1.5">Object</th>
+            <th className="px-2 py-1.5">Tool</th>
+            <th className="px-2 py-1.5">External</th>
+            <th className="px-2 py-1.5">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {custody.map((e, i) => (
+            <tr
+              key={i}
+              className={
+                "border-t border-slate-800 align-top " +
+                (i % 2 === 0 ? "bg-slate-950/30" : "bg-slate-950/10")
+              }
+            >
+              <td className="whitespace-nowrap px-2 py-1.5 font-mono text-slate-300">
+                {e.at}
+              </td>
+              <td className="px-2 py-1.5 font-mono text-slate-200">{e.actor}</td>
+              <td className="px-2 py-1.5 font-mono text-emerald-300">{e.action}</td>
+              <td className="px-2 py-1.5 font-mono text-slate-300">{e.objectId}</td>
+              <td className="px-2 py-1.5 font-mono text-[10.5px] text-slate-400">
+                {e.tool}
+              </td>
+              <td className="px-2 py-1.5">
+                {e.external ? (
+                  <span className="rounded border border-amber-600/60 bg-amber-700/20 px-1.5 font-mono text-[10px] uppercase tracking-widest text-amber-200">
+                    external
+                  </span>
+                ) : (
+                  <span className="font-mono text-[10px] text-slate-500">local</span>
+                )}
+              </td>
+              <td className="px-2 py-1.5 text-slate-300">{e.detail ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="border-t border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] italic text-slate-500">
+        Every external lookup is recorded so investigative interest disclosed to
+        third parties is visible to the analyst before export.
+      </p>
+    </div>
+  );
+}
+
+// --- Security Posture (Screen 14) ---------------------------------------
+
+export function SecurityPanel({ security, ctx }: PanelProps) {
+  return (
+    <div className="flex flex-col gap-3">
+      <Card title="Mission risk">
+        <KV k="Handling" v={ctx.handling} />
+        <KV k="Compartment" v={ctx.compartment} />
+        <KV k="Session risk level" v={ctx.sessionRisk} />
+      </Card>
+      <Card title={`Controls (${security.length})`}>
+        <ul className="flex flex-col">
+          {security.map((c, i) => (
+            <li
+              key={c.id}
+              className={
+                "flex flex-col gap-1 py-2 " +
+                (i > 0 ? "border-t border-slate-800" : "")
+              }
+            >
+              <div className="flex items-baseline gap-2">
+                <SecurityStateBadge state={c.state} />
+                <span className="text-sm text-slate-100">{c.label}</span>
+                <span className="ml-auto font-mono text-[10.5px] text-slate-500">
+                  {c.id}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">{c.detail}</p>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card title="Threat assumptions">
+        <ul className="space-y-1 text-xs text-slate-300">
+          <li>· Submitted media may be malicious; parsers may be exploited.</li>
+          <li>· Links may track analyst identity.</li>
+          <li>· Third-party APIs disclose investigative interest.</li>
+          <li>· External sources may change after analysis (link rot).</li>
+          <li>· Adversaries may attempt poisoning, prompt injection, or deception.</li>
+          <li>· Over-trust in AI output is itself a threat to assessment quality.</li>
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
+function SecurityStateBadge({ state }: { state: SecurityControl["state"] }) {
+  const cls =
+    state === "ok"
+      ? "bg-emerald-600/30 text-emerald-200 border-emerald-600/60"
+      : state === "warn"
+        ? "bg-amber-700/30 text-amber-200 border-amber-600/60"
+        : state === "violated"
+          ? "bg-red-700/30 text-red-200 border-red-600/60"
+          : "bg-slate-800/40 text-slate-400 border-slate-700";
+  return (
+    <span
+      className={
+        "rounded border px-1.5 font-mono text-[10px] uppercase tracking-widest " +
+        cls
+      }
+    >
+      {state}
+    </span>
+  );
 }

@@ -10,5 +10,5 @@ export function deriveCaseId(createdAt: string, inputHashOrSeed: string): string
   const seed = (inputHashOrSeed || "").replace(/[^a-f0-9]/gi, "").slice(0, 4);
   const fallback = String(d.getUTCHours()).padStart(2, "0") + String(d.getUTCMinutes()).padStart(2, "0");
   const tail = seed.length === 4 ? seed.toLowerCase() : fallback;
-  return `VS-${yyyy}-${mm}-${dd}-${tail}`;
+  return `MIW-${yyyy}-${mm}-${dd}-${tail}`;
 }

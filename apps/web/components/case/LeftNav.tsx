@@ -10,6 +10,10 @@ interface NavBadgeCounts {
   tensions?: number;
   gaps?: number;
   claims?: number;
+  deception?: number;
+  "entity-graph"?: number;
+  custody?: number;
+  security?: number;
 }
 
 export function LeftNav({

@@ -3,10 +3,20 @@
 // Finding list; the analyst layer is interpretation on top of that.
 
 import type {
+  AssessmentMemo,
   CaseIntake,
+  ChainEvent,
   CollectionGap,
+  DeceptionIndicator,
+  EntityEdge,
+  EntityNode,
   FindingRef,
   Hypothesis,
+  PlanTask,
+  SecurityControl,
+  SourceDossier,
+  SourceLabel,
+  SourceType,
   StrengthAxis,
   StrengthLevel,
   StrengthScore,
@@ -1046,4 +1056,661 @@ function buildSummary(
     parts.push("unresolved high-severity tension");
   const reason = parts.length ? parts.join("; ") : "evidence axes are balanced";
   return `Verification confidence: ${level} — ${reason}.`;
+}
+
+// --- chain of custody ---------------------------------------------------
+
+const TOOL_ID = "veritas/0.2";
+
+function externalSourceFor(f: Finding): string | null {
+  if (f.source.startsWith("google.")) return f.source;
+  if (f.source.startsWith("serpapi.")) return f.source;
+  if (f.source === "huggingface.inference") return f.source;
+  if (f.source.startsWith("bing.")) return f.source;
+  return null;
+}
+
+export function deriveCustodyChain(
+  findings: Finding[],
+  intake: CaseIntake,
+  createdAt: string,
+  inputHash: string | null,
+  analystSignedAt: string | null,
+  analystName: string | null,
+): ChainEvent[] {
+  const out: ChainEvent[] = [];
+  const actor = analystName || "analyst";
+
+  out.push({
+    at: createdAt,
+    actor,
+    action: "case_created",
+    objectId: "case",
+    tool: TOOL_ID,
+    external: false,
+    detail: `Compartment: ${intake.operationalRelevance || "—"}`,
+  });
+
+  if (inputHash)
+    out.push({
+      at: createdAt,
+      actor: "system",
+      action: "input_hash_computed",
+      objectId: "media:original",
+      hashAfter: inputHash,
+      tool: "python:hashlib.sha256",
+      external: false,
+    });
+
+  out.push({
+    at: createdAt,
+    actor: "system",
+    action: "working_copy_created",
+    objectId: "media:working",
+    tool: TOOL_ID,
+    external: false,
+    detail: "Bytes routed into tier pipelines; original preserved",
+  });
+
+  // One event per finding (and an external-lookup record where applicable).
+  for (const f of findings) {
+    const ext = externalSourceFor(f);
+    if (ext)
+      out.push({
+        at: f.timestamp,
+        actor: `external:${ext}`,
+        action: "external_lookup",
+        objectId: f.check,
+        tool: ext,
+        external: true,
+        detail: "API request issued; provider disclosure logged",
+      });
+    out.push({
+      at: f.timestamp,
+      actor: "system",
+      action: "finding_generated",
+      objectId: f.check,
+      tool: ext ?? TOOL_ID,
+      external: !!ext,
+      detail: `T${f.tier} · ${f.result} · ${f.confidence}`,
+    });
+  }
+
+  if (intake.analystNotes.trim())
+    out.push({
+      at: createdAt,
+      actor,
+      action: "analyst_note_recorded",
+      objectId: "note:intake",
+      tool: TOOL_ID,
+      external: false,
+      detail: intake.analystNotes.slice(0, 120),
+    });
+
+  if (analystSignedAt)
+    out.push({
+      at: analystSignedAt,
+      actor,
+      action: "assessment_signed",
+      objectId: "report",
+      tool: TOOL_ID,
+      external: false,
+      detail: `Analyst: ${analystName ?? "—"}`,
+    });
+
+  // Stable chronological order.
+  out.sort((a, b) => {
+    const da = safeDate(a.at)?.getTime() ?? 0;
+    const db = safeDate(b.at)?.getTime() ?? 0;
+    return da - db;
+  });
+  return out;
+}
+
+// --- deception indicators -----------------------------------------------
+
+export function deriveDeception(
+  findings: Finding[],
+  intake: CaseIntake,
+  tensions: Tension[],
+): DeceptionIndicator[] {
+  const c2pa = byCheck(findings, "c2pa.signature.verify");
+  const reverse = byCheck(findings, "reverse_image.lookup");
+  const earliest = safeDate(ev<string>(reverse, "earliest_seen") ?? null);
+  const claimed = safeDate(intake.claimedDateTime);
+  const sourceRep = byCheck(findings, "source.reputation");
+  const factcheck = byCheck(findings, "google.factcheck.search");
+  const ela = byCheck(findings, "forensics.ela");
+  const noise = byCheck(findings, "forensics.noise_residual");
+  const t3 = byCheck(findings, "ai.deepfake.vit");
+  const t3Label = ev<string>(t3, "model_label");
+  const t3Score = ev<number>(t3, "model_score") ?? 0;
+  const factRating = ev<string>(factcheck, "rating");
+  const reverseHits = ev<number>(reverse, "hit_count") ?? 0;
+
+  const out: DeceptionIndicator[] = [];
+
+  out.push({
+    id: "provenance_absence",
+    label: "Provenance absence",
+    status:
+      c2pa && ev<boolean>(c2pa, "manifest_present") === false ? "active" : "absent",
+    affectedClaims: ["Authentic current media"],
+    evidence: ["c2pa.signature.verify"],
+    explanation:
+      "No cryptographic provenance present. Authenticity rests entirely on inspectable and external evidence.",
+    caveat:
+      "Absence of C2PA is the common case in 2026. Not by itself a deception signal — weighs against H1.",
+  });
+
+  const historicalActive =
+    reverseHits > 0 &&
+    claimed &&
+    earliest &&
+    (claimed.getTime() - earliest.getTime()) / (1000 * 60 * 60 * 24 * 365.25) > 1;
+  out.push({
+    id: "historical_reuse",
+    label: "Historical media reuse",
+    status: historicalActive ? "active" : reverseHits > 0 ? "not_evaluable" : "absent",
+    affectedClaims: ["Date / time", "Subject", "Authentic current media"],
+    evidence: ["reverse_image.lookup", "intake.claimedDateTime"],
+    explanation: historicalActive
+      ? `Visual base online since ${earliest?.toISOString().slice(0, 10)} — predates the claimed event by years.`
+      : reverseHits > 0
+        ? "Prior matches exist but no claim date supplied to evaluate reuse."
+        : "No prior matches; reuse cannot be established.",
+    caveat: "Reuse is not always intentional deception (memorial posts, retrospective coverage, etc.).",
+  });
+
+  out.push({
+    id: "context_mismatch",
+    label: "Context mismatch",
+    status:
+      factRating && /mislead|outdated|context|false|fake|incorrect/i.test(factRating)
+        ? "active"
+        : factRating
+          ? "absent"
+          : "not_evaluable",
+    affectedClaims: ["Subject", "Context"],
+    evidence: ["google.factcheck.search"],
+    explanation: factRating
+      ? `External fact-check rated this "${factRating}".`
+      : "No external fact-check available to evaluate context.",
+    caveat: "External fact-check is an opinion, not a primary evidence chain.",
+  });
+
+  out.push({
+    id: "source_laundering",
+    label: "Source laundering",
+    status:
+      !intake.sourceUrl.trim() && !intake.claimedSource.trim()
+        ? "not_evaluable"
+        : sourceRep?.result === "fail"
+          ? "active"
+          : "absent",
+    affectedClaims: ["Source"],
+    evidence: ["source.reputation", "intake.sourceUrl"],
+    explanation:
+      "Multiple republications of the same media may launder its origin from an unknown or compromised source.",
+    caveat: "Reposting alone is not laundering. Look for chains that obscure first publication.",
+  });
+
+  out.push({
+    id: "forensic_inconsistency",
+    label: "Forensic inconsistency",
+    status:
+      isElaElevated(ela) || isNoiseInconsistent(noise) ? "active" : ela || noise ? "absent" : "not_evaluable",
+    affectedClaims: ["Integrity"],
+    evidence: ["forensics.ela", "forensics.noise_residual"],
+    explanation:
+      isElaElevated(ela) || isNoiseInconsistent(noise)
+        ? "Pixel-level anomalies suggest localized editing or compositing."
+        : "Pixel-level signals are within baseline.",
+    caveat:
+      "ELA and noise residual catch many but not all manipulations. Copy-move and JPEG quantization checks are on the backlog.",
+  });
+
+  out.push({
+    id: "metadata_contradiction",
+    label: "Metadata contradiction",
+    status: tensions.some((t) => t.id === "claim_date_vs_visual_age") ? "active" : "absent",
+    affectedClaims: ["Date / time"],
+    evidence: ["intake.claimedDateTime", "reverse_image.lookup"],
+    explanation: "Claimed timestamp does not line up with the earliest known sighting of the visual.",
+    caveat: "Earliest-seen is a lower bound for true origin date, not an upper bound.",
+  });
+
+  out.push({
+    id: "ai_source_disagreement",
+    label: "AI / source disagreement",
+    status: tensions.some((t) => t.id === "ai_real_vs_old_visual")
+      ? "active"
+      : t3
+        ? "absent"
+        : "not_evaluable",
+    affectedClaims: ["Integrity", "Subject"],
+    evidence: ["ai.deepfake.vit", "reverse_image.lookup"],
+    explanation:
+      t3Label === "Real" && t3Score > 0.8
+        ? "Face-level AI signal labels the image Real, but source evidence (reverse-image, fact-check) tells a different story."
+        : "AI signal and source evidence are not in conflict.",
+    caveat: "T3 is face-focused. Disagreement with source evidence is expected for scene-level manipulation.",
+  });
+
+  out.push({
+    id: "claim_source_mismatch",
+    label: "Claim / source mismatch",
+    status:
+      intake.claimedSource.trim() && c2pa && ev<boolean>(c2pa, "manifest_present") === false
+        ? "active"
+        : "absent",
+    affectedClaims: ["Source"],
+    evidence: ["intake.claimedSource", "c2pa.signature.verify"],
+    explanation:
+      "Analyst attributes the media to a named source, but no signed provenance ties the media to that source.",
+    caveat: "Most outlets do not yet sign C2PA. Absence is informational, not damning.",
+  });
+
+  out.push({
+    id: "coordinated_amplification",
+    label: "Coordinated amplification",
+    status: "not_evaluable",
+    affectedClaims: ["Source"],
+    evidence: ["(not yet wired)"],
+    explanation: "Detecting bot-like republication patterns requires multi-source ingestion (backlog).",
+    caveat: "Amplification volume alone does not imply coordination; analyst review required.",
+  });
+
+  out.push({
+    id: "unsupported_urgency",
+    label: "Unsupported urgency / emotional framing",
+    status: "not_evaluable",
+    affectedClaims: ["Subject"],
+    evidence: ["(text analysis on claim wording not yet wired)"],
+    explanation:
+      "Emotional or time-pressure framing is a classic deception lever but requires text analysis we have not implemented.",
+    caveat: "Treat emotional framing as a soft signal, not an indicator on its own.",
+  });
+
+  return out;
+}
+
+// --- entity graph -------------------------------------------------------
+
+function safeUrlHost(u: string): string | null {
+  try {
+    return new URL(u).host.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+export function deriveEntities(
+  findings: Finding[],
+  intake: CaseIntake,
+  inputHash: string | null,
+): { nodes: EntityNode[]; edges: EntityEdge[] } {
+  const nodes: EntityNode[] = [];
+  const edges: EntityEdge[] = [];
+
+  const mediaId = "media:" + (inputHash?.slice(0, 8) ?? "current");
+  nodes.push({
+    id: mediaId,
+    type: "media",
+    label: `Submitted media (${inputHash?.slice(0, 8) ?? "—"})`,
+  });
+
+  // Source domain
+  if (intake.sourceUrl.trim()) {
+    const host = safeUrlHost(intake.sourceUrl);
+    if (host) {
+      const isTelegram = /^t\.me$|^telegram\.me$/i.test(host);
+      const id = isTelegram ? `tg:${host}` : `domain:${host}`;
+      nodes.push({
+        id,
+        type: isTelegram ? "telegram_channel" : "source_domain",
+        label: host,
+      });
+      edges.push({ from: id, to: mediaId, type: "published" });
+    }
+  }
+
+  // Claimed source (analyst label) — distinct from sourceUrl
+  if (intake.claimedSource.trim()) {
+    const id = `claimed:${intake.claimedSource}`;
+    nodes.push({
+      id,
+      type: "claimed_source",
+      label: intake.claimedSource,
+      caveat: "Analyst-supplied attribution, not yet corroborated.",
+    });
+    edges.push({ from: id, to: mediaId, type: "claims_same_event" });
+  }
+
+  // Claimed location
+  if (intake.claimedLocation.trim()) {
+    const id = `loc:${intake.claimedLocation}`;
+    nodes.push({
+      id,
+      type: "claimed_location",
+      label: intake.claimedLocation,
+      caveat: "Geolocation not yet verified.",
+    });
+    edges.push({ from: mediaId, to: id, type: "located_in" });
+  }
+
+  // Reverse-image visual matches
+  const reverse = byCheck(findings, "reverse_image.lookup");
+  const hits = ev<Array<Record<string, unknown>>>(reverse, "hits") ?? [];
+  hits.forEach((h, i) => {
+    const url = typeof h.url === "string" ? h.url : null;
+    const host = url ? safeUrlHost(url) : null;
+    const id = `vmatch:${i}`;
+    nodes.push({
+      id,
+      type: "visual_match",
+      label: (typeof h.name === "string" && h.name) || host || `match #${i + 1}`,
+      caveat:
+        typeof h.datePublished === "string"
+          ? `First seen ${h.datePublished}`
+          : undefined,
+    });
+    edges.push({ from: id, to: mediaId, type: "visually_matches" });
+    if (host) {
+      const dom = `domain:${host}`;
+      if (!nodes.some((n) => n.id === dom))
+        nodes.push({ id: dom, type: "source_domain", label: host });
+      edges.push({ from: dom, to: id, type: "published" });
+    }
+  });
+
+  // Fact-check publisher
+  const factcheck = byCheck(findings, "google.factcheck.search");
+  const publisher = ev<string>(factcheck, "publisher");
+  const reviewUrl = ev<string>(factcheck, "url");
+  if (publisher) {
+    const id = `fc:${publisher}`;
+    nodes.push({
+      id,
+      type: "fact_check",
+      label: publisher,
+      caveat: reviewUrl ? `Review: ${reviewUrl}` : undefined,
+    });
+    edges.push({ from: id, to: mediaId, type: "reviews" });
+  }
+
+  return { nodes, edges };
+}
+
+// --- source dossier -----------------------------------------------------
+
+export function deriveSourceDossier(
+  findings: Finding[],
+  intake: CaseIntake,
+): SourceDossier | null {
+  if (!intake.sourceUrl.trim() && !intake.claimedSource.trim()) return null;
+
+  const sourceRep = byCheck(findings, "source.reputation");
+  const telegram = byCheck(findings, "telegram.reputation");
+  const host = intake.sourceUrl.trim() ? safeUrlHost(intake.sourceUrl) : null;
+  const isTelegram = host ? /^t\.me$|^telegram\.me$/i.test(host) : false;
+
+  const identity =
+    host || intake.claimedSource || intake.sourceUrl || "(unresolved)";
+
+  let type: SourceType = "unknown";
+  if (isTelegram) type = "telegram_channel";
+  else if (host && /reuters\.com|apnews\.com|bbc\.|nato\.int|gov\.|wikimedia/i.test(host)) type = "official";
+  else if (host && /\.gov$|\.edu$|reuters|ap\.|bbc|cnn|nytimes|guardian|wapo/i.test(host)) type = "media_outlet";
+  else if (host && /twitter\.com|x\.com|facebook|instagram|tiktok/i.test(host)) type = "social_account";
+
+  const labels: SourceLabel[] = [];
+  if (sourceRep?.result === "pass") labels.push("Trusted publication domain");
+  if (sourceRep?.result === "fail") labels.push("Questionable provenance");
+  if (telegram?.result === "fail") labels.push("Known amplification node");
+  if (!sourceRep && intake.claimedSource) labels.push("Primary source not established");
+  if (!sourceRep && !intake.claimedSource) labels.push("Uncorroborated source");
+  if (!host && intake.claimedSource) labels.push("Identity unresolved");
+  if (type === "official") labels.push("Official channel");
+
+  const reliabilityHistory =
+    sourceRep
+      ? typeof ev(sourceRep, "rating") === "string"
+        ? (ev<string>(sourceRep, "rating") as string)
+        : sourceRep.result === "pass"
+          ? "Domain in trusted set; no prior issues in local cache."
+          : sourceRep.result === "fail"
+            ? "Domain present in local disinfo cache."
+            : "No reputation record."
+      : "No reputation record.";
+
+  const amplificationBehavior =
+    telegram?.result === "fail"
+      ? "Channel flagged in curated amplifier list."
+      : telegram
+        ? "Not flagged in local amplifier list."
+        : "Not a Telegram URL.";
+
+  const linkedEntities: string[] = [];
+  if (intake.claimedSource.trim()) linkedEntities.push(intake.claimedSource);
+  if (intake.claimedLocation.trim()) linkedEntities.push(intake.claimedLocation);
+
+  const caveats: string[] = [];
+  if (!sourceRep) caveats.push("No reputation lookup performed (no source URL or local cache miss).");
+  if (intake.claimedSource && !host) caveats.push("Analyst-named source has not been matched to a domain.");
+  if (host && !sourceRep) caveats.push("URL is present but reputation lookup did not return data.");
+
+  return {
+    identity,
+    type,
+    labels,
+    reliabilityHistory,
+    amplificationBehavior,
+    linkedEntities,
+    caveats,
+  };
+}
+
+// --- collection plan ----------------------------------------------------
+
+const GAP_TO_TASK: Record<string, { title: string; priority: PlanTask["priority"]; affected: string }> = {
+  no_source_url: {
+    title: "Request original source URL from submitter",
+    priority: "high",
+    affected: "H1, H4",
+  },
+  no_c2pa_manifest: {
+    title: "Locate original C2PA-signed source upload if available",
+    priority: "medium",
+    affected: "H1",
+  },
+  no_claim_text: {
+    title: "Capture analyst claim statement",
+    priority: "high",
+    affected: "all hypotheses",
+  },
+  no_geolocation: {
+    title: "Verify claimed location via geo / shadow / landmark",
+    priority: "medium",
+    affected: "H1, H2",
+  },
+  no_claimed_datetime: {
+    title: "Pin down claimed event datetime",
+    priority: "medium",
+    affected: "H2",
+  },
+  no_source_reputation: {
+    title: "Run source reputation lookup against curated set",
+    priority: "low",
+    affected: "H1",
+  },
+  no_factcheck_data: {
+    title: "Re-attempt fact-check lookup or escalate to manual review",
+    priority: "low",
+    affected: "H2",
+  },
+  exif_missing: {
+    title: "Obtain full-resolution original with EXIF intact",
+    priority: "low",
+    affected: "H1, H3",
+  },
+};
+
+export function derivePlan(gaps: CollectionGap[]): PlanTask[] {
+  return gaps.map((g, i) => {
+    const tmpl = GAP_TO_TASK[g.id] ?? {
+      title: g.label,
+      priority: "medium" as const,
+      affected: "—",
+    };
+    return {
+      id: `task-${i + 1}`,
+      title: tmpl.title,
+      affectedHypothesis: tmpl.affected,
+      owner: "—",
+      priority: tmpl.priority,
+      status: "open",
+      due: "—",
+    };
+  });
+}
+
+// --- security posture ---------------------------------------------------
+
+export function deriveSecurity(
+  findings: Finding[],
+  intake: CaseIntake,
+  inputHash: string | null,
+): SecurityControl[] {
+  const externalChecks = findings.filter((f) => externalSourceFor(f));
+  const out: SecurityControl[] = [];
+
+  out.push({
+    id: "external_lookup",
+    label: "External lookup",
+    state: externalChecks.length > 0 ? "warn" : "ok",
+    detail:
+      externalChecks.length > 0
+        ? `${externalChecks.length} external service(s) consulted: ${[...new Set(externalChecks.map((f) => f.source))].join(", ")}`
+        : "All analysis performed locally / from cache.",
+  });
+
+  out.push({
+    id: "original_preserved",
+    label: "Original byte preservation",
+    state: inputHash ? "ok" : "off",
+    detail: inputHash
+      ? `Immutable input hash recorded (${inputHash.slice(0, 12)}…). Tier pipelines operate on working copies.`
+      : "No input hash yet.",
+  });
+
+  out.push({
+    id: "api_disclosure",
+    label: "API disclosure",
+    state: externalChecks.length > 0 ? "warn" : "ok",
+    detail:
+      externalChecks.length > 0
+        ? "Investigative interest was disclosed to external providers (logged in Chain of Custody)."
+        : "No external services contacted; investigative interest not disclosed.",
+  });
+
+  out.push({
+    id: "key_redaction",
+    label: "API key redaction in exports",
+    state: "ok",
+    detail:
+      "All error strings are scrubbed of `?key=` / `apikey=` / `token=` query parameters before being written into evidence.",
+  });
+
+  out.push({
+    id: "active_content",
+    label: "Active content stripped",
+    state: "warn",
+    detail:
+      "We do not yet parse the image bytes for embedded active content (PDFs, SVG scripts). Treat untrusted uploads in an isolated session.",
+  });
+
+  out.push({
+    id: "url_fetch_cap",
+    label: "URL fetch cap",
+    state: "ok",
+    detail:
+      "Remote fetches are capped at 25MB, require image/* content-type, and use a self-identifying User-Agent.",
+  });
+
+  out.push({
+    id: "report_integrity",
+    label: "Report integrity hash",
+    state: "ok",
+    detail:
+      "Exported PDFs embed `report_sha256 = sha256(input_hash || canonical_report_json_without_signature)` so the PDF and the JSON are byte-verifiable against each other.",
+  });
+
+  out.push({
+    id: "session_risk",
+    label: "Session risk profile",
+    state: intake.sourceUrl.trim() && /t\.me|telegram\.me/i.test(intake.sourceUrl) ? "warn" : "ok",
+    detail:
+      intake.sourceUrl.trim() && /t\.me|telegram\.me/i.test(intake.sourceUrl)
+        ? "Telegram-sourced material — analyst handle exposure risk present in any direct fetch."
+        : "Standard session.",
+  });
+
+  return out;
+}
+
+// --- final assessment memo ----------------------------------------------
+
+export function buildMemo(
+  findings: Finding[],
+  hypotheses: Hypothesis[],
+  tensions: Tension[],
+  gaps: CollectionGap[],
+  strength: StrengthScore,
+  deception: DeceptionIndicator[],
+): AssessmentMemo {
+  const top = [...hypotheses].sort((a, b) =>
+    (b.confidence === "high" ? 3 : b.confidence === "moderate" ? 2 : b.confidence === "low" ? 1 : 0) -
+    (a.confidence === "high" ? 3 : a.confidence === "moderate" ? 2 : a.confidence === "low" ? 1 : 0),
+  )[0];
+
+  const executive =
+    `We assess with ${strength.overall} confidence that ` +
+    (top?.id === "H1" && top.confidence === "high"
+      ? `the submitted media supports the attached claim.`
+      : top?.id === "H2"
+        ? `the submitted media is reused out of context; the visual base does not originate at the claimed event.`
+        : top?.id === "H3"
+          ? `localized manipulation is present in the submitted media.`
+          : top?.id === "H4"
+            ? `the submitted media may be fully synthetic, but corroborating evidence is incomplete.`
+            : `the available evidence is insufficient to verify the attached claim.`) +
+    ` ${strength.summary} ` +
+    (tensions.length > 0
+      ? `${tensions.length} cross-tier tension(s) remain unresolved.`
+      : "No cross-tier tensions surfaced.") +
+    ` The Tier 3 AI signal is treated as non-authoritative and does not override deterministic provenance and OSINT findings.`;
+
+  const keySupporting = (top?.supporting ?? []).slice(0, 5).map((r) => `${r.check} — ${r.reason}`);
+  const keyContradicting = (top?.contradicting ?? []).slice(0, 5).map((r) => `${r.check} — ${r.reason}`);
+  const deceptionLines = deception.filter((d) => d.status === "active").map((d) => `${d.label} — ${d.explanation}`);
+  const collectionGaps = gaps.map((g) => g.label);
+  const methodLimitations = [
+    "C2PA verification is deterministic on signature presence; it does not establish editorial intent.",
+    "ELA and noise residual flag local recompression anomalies; they do not localize manipulation type.",
+    "Reverse-image lookup is bounded by provider coverage; absence of matches is not novelty.",
+    "Tier 3 deepfake classifier is face-focused (FaceForensics++) and weak for scene-level compositing.",
+    "Fact-check API returns the strongest single hit; it is one external opinion, not consensus.",
+  ];
+
+  return {
+    executive,
+    keySupporting,
+    keyContradicting,
+    deception: deceptionLines,
+    collectionGaps,
+    methodLimitations,
+    securityNote:
+      "Original bytes preserved; external lookups logged in Chain of Custody; API keys redacted from evidence. Report integrity hash is embedded in the exported PDF.",
+  };
 }

@@ -13,14 +13,25 @@ export type PanelId =
   | "forensics"
   | "osint"
   | "source-network"
+  | "entity-graph"
   | "timeline"
+  | "geo-chrono"
+  | "deception"
   | "hypotheses"
   | "tensions"
   | "gaps"
   | "claims"
   | "strength"
+  | "security"
+  | "custody"
   | "notes"
   | "assessment";
+
+export type SessionRiskLevel =
+  | "Normal"
+  | "Degraded"
+  | "High-risk source"
+  | "Untrusted media";
 
 export interface CaseIntake {
   mediaFile: File | null;
@@ -163,9 +174,153 @@ export interface StrengthScore {
   summary: string;
 }
 
+// --- chain of custody ----------------------------------------------------
+
+export interface ChainEvent {
+  at: string;
+  actor: string; // analyst initials or "system" or "external:google.factcheck"
+  action: string; // "case_created", "input_hash_computed", "external_lookup", "finding_generated", "assessment_signed", ...
+  objectId: string; // case id or finding check or "report"
+  hashBefore?: string;
+  hashAfter?: string;
+  tool: string; // "veritas/0.1", "huggingface.inference", "serpapi.google_lens", ...
+  external: boolean;
+  detail?: string;
+}
+
+// --- deception indicators (Screen 9) -------------------------------------
+
+export type DeceptionStatus = "active" | "absent" | "not_evaluable";
+
+export type DeceptionIndicatorId =
+  | "provenance_absence"
+  | "historical_reuse"
+  | "context_mismatch"
+  | "source_laundering"
+  | "coordinated_amplification"
+  | "forensic_inconsistency"
+  | "metadata_contradiction"
+  | "claim_source_mismatch"
+  | "ai_source_disagreement"
+  | "unsupported_urgency";
+
+export interface DeceptionIndicator {
+  id: DeceptionIndicatorId;
+  label: string;
+  status: DeceptionStatus;
+  affectedClaims: string[];
+  evidence: string[];
+  explanation: string;
+  caveat: string;
+}
+
+// --- entity graph --------------------------------------------------------
+
+export type EntityNodeType =
+  | "media"
+  | "visual_match"
+  | "source_domain"
+  | "telegram_channel"
+  | "fact_check"
+  | "claimed_source"
+  | "claimed_location"
+  | "publisher";
+
+export type EntityEdgeType =
+  | "published"
+  | "visually_matches"
+  | "reposted"
+  | "reviews"
+  | "located_in"
+  | "claims_same_event";
+
+export interface EntityNode {
+  id: string;
+  type: EntityNodeType;
+  label: string;
+  caveat?: string;
+}
+
+export interface EntityEdge {
+  from: string;
+  to: string;
+  type: EntityEdgeType;
+}
+
+// --- source dossier ------------------------------------------------------
+
+export type SourceLabel =
+  | "Primary source not established"
+  | "Uncorroborated source"
+  | "Known amplification node"
+  | "Official channel"
+  | "Trusted publication domain"
+  | "Questionable provenance"
+  | "Identity unresolved";
+
+export type SourceType =
+  | "primary"
+  | "aggregator"
+  | "official"
+  | "media_outlet"
+  | "social_account"
+  | "telegram_channel"
+  | "unknown";
+
+export interface SourceDossier {
+  identity: string;
+  type: SourceType;
+  labels: SourceLabel[];
+  reliabilityHistory: string;
+  amplificationBehavior: string;
+  linkedEntities: string[];
+  caveats: string[];
+}
+
+// --- collection plan -----------------------------------------------------
+
+export type PlanTaskPriority = "high" | "medium" | "low";
+
+export type PlanTaskStatus = "open" | "in_progress" | "blocked" | "done";
+
+export interface PlanTask {
+  id: string;
+  title: string;
+  affectedHypothesis: string;
+  owner: string;
+  priority: PlanTaskPriority;
+  status: PlanTaskStatus;
+  due: string; // ISO or "—"
+}
+
+// --- security posture ----------------------------------------------------
+
+export type SecurityControlState = "ok" | "warn" | "violated" | "off";
+
+export interface SecurityControl {
+  id: string;
+  label: string;
+  state: SecurityControlState;
+  detail: string;
+}
+
+// --- final assessment memo ----------------------------------------------
+
+export interface AssessmentMemo {
+  executive: string;
+  keySupporting: string[];
+  keyContradicting: string[];
+  deception: string[];
+  collectionGaps: string[];
+  methodLimitations: string[];
+  securityNote: string;
+}
+
 export interface CaseContext {
   caseId: string;
   handling: string;
+  compartment: string;
+  sessionRisk: SessionRiskLevel;
   analystName: string | null;
   status: CaseStatus;
   createdAt: string;
@@ -176,18 +331,23 @@ export interface CaseContext {
 }
 
 export const PANEL_LABELS: Record<PanelId, string> = {
-  overview: "Case Overview",
-  media: "Media Evidence",
+  overview: "Case Board",
+  media: "Media Lab",
   provenance: "Provenance",
   forensics: "Forensics",
-  osint: "OSINT Corroboration",
-  "source-network": "Source Network",
+  osint: "OSINT",
+  "source-network": "Source Dossier",
+  "entity-graph": "Entity Graph",
   timeline: "Timeline",
+  "geo-chrono": "Geo / Chrono",
+  deception: "Deception Indicators",
   hypotheses: "Hypotheses",
   tensions: "Analytic Tensions",
-  gaps: "Collection Gaps",
+  gaps: "Collection Plan",
   claims: "Claim Ledger",
   strength: "Evidence Strength",
+  security: "Security Posture",
+  custody: "Chain of Custody",
   notes: "Analyst Notes",
   assessment: "Final Assessment",
 };
@@ -198,13 +358,18 @@ export const PANEL_ORDER: PanelId[] = [
   "provenance",
   "forensics",
   "osint",
-  "source-network",
-  "timeline",
-  "hypotheses",
-  "tensions",
-  "gaps",
   "claims",
+  "source-network",
+  "entity-graph",
+  "timeline",
+  "geo-chrono",
+  "deception",
+  "tensions",
+  "hypotheses",
   "strength",
+  "gaps",
+  "security",
+  "custody",
   "notes",
   "assessment",
 ];

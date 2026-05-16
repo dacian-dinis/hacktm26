@@ -10,10 +10,15 @@ import {
   AssessmentPanel,
   CaseOverviewPanel,
   ClaimsPanel,
+  CustodyPanel,
+  DeceptionPanel,
+  EntityGraphPanel,
   GapsPanel,
+  GeoChronoPanel,
   HypothesesPanel,
   MediaEvidencePanel,
   NotesPanel,
+  SecurityPanel,
   SourceNetworkPanel,
   StrengthPanel,
   TensionsPanel,
@@ -23,8 +28,15 @@ import {
 import { ReportSkeleton } from "@/components/report/ReportSkeleton";
 import { deriveCaseId } from "@/lib/case/caseId";
 import {
+  buildMemo,
+  deriveCustodyChain,
+  deriveDeception,
+  deriveEntities,
   deriveGaps,
   deriveHypotheses,
+  derivePlan,
+  deriveSecurity,
+  deriveSourceDossier,
   deriveStrength,
   deriveSubClaims,
   deriveTensions,
@@ -128,6 +140,11 @@ export default function Home() {
     () => ({
       caseId: deriveCaseId(createdAt || new Date().toISOString(), report?.input_hash ?? ""),
       handling: "UNCLASSIFIED // DEMO",
+      compartment: intake.operationalRelevance.trim() || "Election Integrity",
+      sessionRisk:
+        intake.sourceUrl.trim() && /t\.me|telegram\.me/i.test(intake.sourceUrl)
+          ? "High-risk source"
+          : "Normal",
       analystName,
       status: report ? (report.analyst_signature ? "signed" : "assessment") : "intake",
       createdAt: createdAt || new Date().toISOString(),
@@ -153,6 +170,39 @@ export default function Home() {
   const strength = useMemo(
     () => deriveStrength(findings, intake, gaps, tensions),
     [findings, intake, gaps, tensions],
+  );
+  const deception = useMemo(
+    () => deriveDeception(findings, intake, tensions),
+    [findings, intake, tensions],
+  );
+  const entities = useMemo(
+    () => deriveEntities(findings, intake, report?.input_hash ?? null),
+    [findings, intake, report?.input_hash],
+  );
+  const dossier = useMemo(
+    () => deriveSourceDossier(findings, intake),
+    [findings, intake],
+  );
+  const custody = useMemo(
+    () =>
+      deriveCustodyChain(
+        findings,
+        intake,
+        ctx.createdAt,
+        report?.input_hash ?? null,
+        report?.signed_at ?? null,
+        analystName,
+      ),
+    [findings, intake, ctx.createdAt, report?.input_hash, report?.signed_at, analystName],
+  );
+  const plan = useMemo(() => derivePlan(gaps), [gaps]);
+  const security = useMemo(
+    () => deriveSecurity(findings, intake, report?.input_hash ?? null),
+    [findings, intake, report?.input_hash],
+  );
+  const memo = useMemo(
+    () => buildMemo(findings, hypotheses, tensions, gaps, strength, deception),
+    [findings, hypotheses, tensions, gaps, strength, deception],
   );
 
   const byTier = (t: 1 | 2 | 3 | 4) => findings.filter((f) => f.tier === t);
@@ -202,6 +252,8 @@ export default function Home() {
         <TopBar
           caseId={deriveCaseId(new Date().toISOString(), "")}
           handling="UNCLASSIFIED // DEMO"
+          compartment="Election Integrity"
+          sessionRisk="Normal"
           analystName={analystName}
           status="intake"
         />
@@ -224,6 +276,8 @@ export default function Home() {
         <TopBar
           caseId={ctx.caseId}
           handling={ctx.handling}
+          compartment={ctx.compartment}
+          sessionRisk={ctx.sessionRisk}
           analystName={analystName}
           status="triage"
         />
@@ -243,6 +297,13 @@ export default function Home() {
     gaps,
     subClaims,
     strength,
+    deception,
+    custody,
+    entities,
+    dossier,
+    plan,
+    security,
+    memo,
     onSelect: setSelected,
     onExportPdf: exportPdf,
     onDownloadJson: downloadJson,
@@ -254,6 +315,8 @@ export default function Home() {
       <TopBar
         caseId={ctx.caseId}
         handling={ctx.handling}
+        compartment={ctx.compartment}
+        sessionRisk={ctx.sessionRisk}
         analystName={analystName}
         status={ctx.status}
         onDownloadJson={downloadJson}
@@ -273,6 +336,9 @@ export default function Home() {
             tensions: tensions.length,
             gaps: gaps.length,
             claims: subClaims.length,
+            deception: deception.filter((d) => d.status === "active").length,
+            "entity-graph": entities.nodes.length,
+            custody: custody.length,
           }}
         />
         <section className="flex-1 overflow-y-auto p-3">
@@ -321,12 +387,19 @@ export default function Home() {
           {activePanel === "source-network" && (
             <SourceNetworkPanel {...panelProps} />
           )}
+          {activePanel === "entity-graph" && (
+            <EntityGraphPanel {...panelProps} />
+          )}
           {activePanel === "timeline" && <TimelinePanel {...panelProps} />}
+          {activePanel === "geo-chrono" && <GeoChronoPanel {...panelProps} />}
+          {activePanel === "deception" && <DeceptionPanel {...panelProps} />}
           {activePanel === "hypotheses" && <HypothesesPanel {...panelProps} />}
           {activePanel === "tensions" && <TensionsPanel {...panelProps} />}
           {activePanel === "gaps" && <GapsPanel {...panelProps} />}
           {activePanel === "claims" && <ClaimsPanel {...panelProps} />}
           {activePanel === "strength" && <StrengthPanel {...panelProps} />}
+          {activePanel === "security" && <SecurityPanel {...panelProps} />}
+          {activePanel === "custody" && <CustodyPanel {...panelProps} />}
           {activePanel === "notes" && <NotesPanel {...panelProps} />}
           {activePanel === "assessment" && <AssessmentPanel {...panelProps} />}
         </section>
@@ -338,18 +411,23 @@ export default function Home() {
 
 function panelTitle(id: PanelId): string {
   return {
-    overview: "Case Overview",
-    media: "Media Evidence",
+    overview: "Case Board",
+    media: "Media Lab",
     provenance: "Provenance · Tier 1",
     forensics: "Forensics · Tier 2 + Tier 3",
     osint: "OSINT Corroboration · Tier 4",
-    "source-network": "Source Network",
+    "source-network": "Source Dossier",
+    "entity-graph": "Entity Graph",
     timeline: "Timeline Reconstruction",
+    "geo-chrono": "Geo / Chrono Workbench",
+    deception: "Deception Indicators",
     hypotheses: "Hypothesis Matrix",
     tensions: "Analytic Tensions",
-    gaps: "Collection Gaps",
+    gaps: "Collection Plan",
     claims: "Claim Ledger",
     strength: "Evidence Strength Rubric",
+    security: "Security Posture",
+    custody: "Chain of Custody",
     notes: "Analyst Notes",
     assessment: "Final Assessment Builder",
   }[id];
