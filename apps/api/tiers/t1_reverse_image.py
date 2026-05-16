@@ -150,30 +150,29 @@ def reverse_image_search(
             source = "serpapi.google_lens"
 
     if not cache_hit and not hits:
+        skipped_reason: str | None = None
         if error is None:
             if not api_key:
-                error = "SERPAPI_API_KEY not set"
+                skipped_reason = "reverse image provider is not configured"
             elif not image_url:
-                error = (
-                    "No URL provided; SerpAPI Google Lens needs a publicly "
-                    "reachable image. For uploads, seed data/reverse_cache.json "
-                    "by SHA-256 instead."
-                )
+                skipped_reason = "local upload has no public URL for Google Lens"
             else:
-                error = "No visual matches and no cache entry"
+                skipped_reason = "no visual matches found"
         return Finding(
             tier=1,
             check="reverse_image.lookup",
             result="indeterminate",
-            confidence="high",
+            confidence="medium",
             evidence={
                 "input_sha256": img_hash,
-                "error": error,
+                "status": "skipped" if skipped_reason else "provider_error",
+                "reason": skipped_reason,
+                **({"error": error} if error else {}),
                 "interpretation": (
-                    "No reverse-image lookup performed for this image. "
-                    "Treat as missing evidence, not as a verdict."
+                    "Reverse-image context is unavailable for this submission. "
+                    "Treat it as a missing external signal, not as evidence "
+                    "for or against authenticity."
                 ),
-                "note": "Add demo-asset hits to data/reverse_cache.json keyed by sha256.",
             },
             source=source,
             timestamp=Finding.now(),

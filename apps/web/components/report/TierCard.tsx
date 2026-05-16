@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { FindingRow } from "./FindingRow";
 import { TIER_LABELS, type Finding, type Tier } from "@/types/report";
+import { Tier3Banner as CaseTier3Banner } from "@/components/case/Tier3Banner";
 
 export function TierCard({
   tier,
@@ -38,7 +39,7 @@ export function TierCard({
       </CardHeader>
       {open && (
         <CardContent id={panelId}>
-          {tier === 3 && <Tier3Banner findings={findings} />}
+          {tier === 3 && <CaseTier3Banner findings={findings} />}
           {findings.length === 0 ? (
             <p className="text-sm text-mutedForeground">No findings yet.</p>
           ) : (
